@@ -1,0 +1,47 @@
+# PATH: .gitignore
+
+# -----------------------------
+# Environment variables (NEVER commit real secrets)
+# -----------------------------
+.env
+.env.*
+!.env.example
+
+# -----------------------------
+# Python
+# -----------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.sqlite3
+
+# -----------------------------
+# Virtual Environments
+# -----------------------------
+pharmacy_env/
+venv/
+.venv/
+
+# -----------------------------
+# Django
+# -----------------------------
+staticfiles/
+media/
+*.log
+
+# -----------------------------
+# Node / Frontend
+# -----------------------------
+pharmacy_frontend/node_modules/
+pharmacy_frontend/dist/
+pharmacy_frontend/.env
+pharmacy_frontend/.env.*
+
+# -----------------------------
+# IDE / OS Noise
+# -----------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

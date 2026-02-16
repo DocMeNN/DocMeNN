@@ -1,0 +1,1612 @@
+openapi: 3.0.3
+info:
+  title: Pharmacy Backend API
+  version: 1.0.0
+  description: POS, Inventory, Sales, and User Management API
+paths:
+  /:
+    get:
+      operationId: root_retrieve
+      description: Simple API root endpoint to verify backend is running.
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  auth:
+                    type: object
+                  docs:
+                    type: object
+                  modules:
+                    type: object
+          description: ''
+  /auth/jwt/create/:
+    post:
+      operationId: auth_jwt_create_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenObtainPair'
+          description: ''
+  /auth/jwt/refresh/:
+    post:
+      operationId: auth_jwt_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /auth/login/:
+    post:
+      operationId: auth_login_create
+      description: Authenticate user with email and password
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Login'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Login'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+          description: ''
+  /auth/me/:
+    get:
+      operationId: auth_me_retrieve
+      description: Get current authenticated user profile
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+          description: ''
+  /auth/register/:
+    post:
+      operationId: auth_register_create
+      description: Register a new user account
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Register'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Register'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Register'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /pos/cart/:
+    get:
+      operationId: pos_cart_retrieve
+      description: Get or create the active cart for the authenticated user
+      tags:
+      - pos
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+          description: ''
+  /pos/cart/items/{item_id}/remove/:
+    delete:
+      operationId: pos_cart_items_remove_destroy
+      description: Remove an item from the active cart
+      parameters:
+      - in: path
+        name: item_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - pos
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+          description: ''
+  /pos/cart/items/{item_id}/update/:
+    patch:
+      operationId: pos_cart_items_update_partial_update
+      description: Update quantity of a cart item
+      parameters:
+      - in: path
+        name: item_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - pos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateCartItemInput'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateCartItemInput'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateCartItemInput'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+          description: ''
+  /pos/cart/items/add/:
+    post:
+      operationId: pos_cart_items_add_create
+      description: Add a product to the active cart (increments quantity if exists)
+      tags:
+      - pos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCartItemInput'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AddCartItemInput'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AddCartItemInput'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+          description: ''
+  /pos/checkout/:
+    post:
+      operationId: pos_checkout_create
+      description: Finalize active cart and create an immutable sale
+      tags:
+      - pos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutInput'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CheckoutInput'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CheckoutInput'
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+          description: ''
+  /pos/health/:
+    get:
+      operationId: pos_health_retrieve
+      description: POS module health check
+      tags:
+      - pos
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /products/categories/:
+    get:
+      operationId: products_categories_list
+      description: |-
+        Category API
+
+        Responsibilities:
+        - Create categories
+        - List categories
+        - Retrieve category details
+
+        Used by:
+        - Product creation
+        - Filtering / grouping
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - products
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCategoryList'
+          description: ''
+    post:
+      operationId: products_categories_create
+      description: |-
+        Category API
+
+        Responsibilities:
+        - Create categories
+        - List categories
+        - Retrieve category details
+
+        Used by:
+        - Product creation
+        - Filtering / grouping
+      tags:
+      - products
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Category'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Category'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Category'
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+          description: ''
+  /products/categories/{id}/:
+    get:
+      operationId: products_categories_retrieve
+      description: |-
+        Category API
+
+        Responsibilities:
+        - Create categories
+        - List categories
+        - Retrieve category details
+
+        Used by:
+        - Product creation
+        - Filtering / grouping
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this category.
+        required: true
+      tags:
+      - products
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+          description: ''
+    put:
+      operationId: products_categories_update
+      description: |-
+        Category API
+
+        Responsibilities:
+        - Create categories
+        - List categories
+        - Retrieve category details
+
+        Used by:
+        - Product creation
+        - Filtering / grouping
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this category.
+        required: true
+      tags:
+      - products
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Category'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Category'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Category'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+          description: ''
+    patch:
+      operationId: products_categories_partial_update
+      description: |-
+        Category API
+
+        Responsibilities:
+        - Create categories
+        - List categories
+        - Retrieve category details
+
+        Used by:
+        - Product creation
+        - Filtering / grouping
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this category.
+        required: true
+      tags:
+      - products
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCategory'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCategory'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCategory'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+          description: ''
+    delete:
+      operationId: products_categories_destroy
+      description: |-
+        Category API
+
+        Responsibilities:
+        - Create categories
+        - List categories
+        - Retrieve category details
+
+        Used by:
+        - Product creation
+        - Filtering / grouping
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this category.
+        required: true
+      tags:
+      - products
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /products/products/:
+    get:
+      operationId: products_products_list
+      description: 'Product endpoints: list/retrieve/create/update (admin/pharmacist).'
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - products
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProductList'
+          description: ''
+    post:
+      operationId: products_products_create
+      description: 'Product endpoints: list/retrieve/create/update (admin/pharmacist).'
+      tags:
+      - products
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Product'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Product'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Product'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+          description: ''
+  /products/products/{id}/:
+    get:
+      operationId: products_products_retrieve
+      description: 'Product endpoints: list/retrieve/create/update (admin/pharmacist).'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this product.
+        required: true
+      tags:
+      - products
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+          description: ''
+    put:
+      operationId: products_products_update
+      description: 'Product endpoints: list/retrieve/create/update (admin/pharmacist).'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this product.
+        required: true
+      tags:
+      - products
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Product'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Product'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Product'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+          description: ''
+    patch:
+      operationId: products_products_partial_update
+      description: 'Product endpoints: list/retrieve/create/update (admin/pharmacist).'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this product.
+        required: true
+      tags:
+      - products
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProduct'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProduct'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProduct'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+          description: ''
+    delete:
+      operationId: products_products_destroy
+      description: 'Product endpoints: list/retrieve/create/update (admin/pharmacist).'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this product.
+        required: true
+      tags:
+      - products
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /products/stock-batches/:
+    get:
+      operationId: products_stock_batches_list
+      description: |-
+        Stock batch endpoints.
+
+        RULES:
+        - Creation MUST go through inventory service
+        - Admin and API share the SAME logic
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - products
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStockBatchList'
+          description: ''
+    post:
+      operationId: products_stock_batches_create
+      description: |-
+        Stock batch endpoints.
+
+        RULES:
+        - Creation MUST go through inventory service
+        - Admin and API share the SAME logic
+      tags:
+      - products
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockBatch'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StockBatch'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StockBatch'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockBatch'
+          description: ''
+  /products/stock-batches/{id}/:
+    get:
+      operationId: products_stock_batches_retrieve
+      description: |-
+        Stock batch endpoints.
+
+        RULES:
+        - Creation MUST go through inventory service
+        - Admin and API share the SAME logic
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this stock batch.
+        required: true
+      tags:
+      - products
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockBatch'
+          description: ''
+    put:
+      operationId: products_stock_batches_update
+      description: |-
+        Stock batch endpoints.
+
+        RULES:
+        - Creation MUST go through inventory service
+        - Admin and API share the SAME logic
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this stock batch.
+        required: true
+      tags:
+      - products
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockBatch'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StockBatch'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StockBatch'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockBatch'
+          description: ''
+    patch:
+      operationId: products_stock_batches_partial_update
+      description: |-
+        Stock batch endpoints.
+
+        RULES:
+        - Creation MUST go through inventory service
+        - Admin and API share the SAME logic
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this stock batch.
+        required: true
+      tags:
+      - products
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStockBatch'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStockBatch'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStockBatch'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockBatch'
+          description: ''
+    delete:
+      operationId: products_stock_batches_destroy
+      description: |-
+        Stock batch endpoints.
+
+        RULES:
+        - Creation MUST go through inventory service
+        - Admin and API share the SAME logic
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this stock batch.
+        required: true
+      tags:
+      - products
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /sales/:
+    get:
+      operationId: sales_list
+      description: |-
+        Refund-only Sale ViewSet.
+
+        RESPONSIBILITIES:
+        - Expose refund endpoint
+        - Enforce authorization
+        - Delegate all business logic
+
+        GUARANTEES:
+        - No sale creation
+        - No stock logic
+        - No direct DB mutation
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - sales
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSaleList'
+          description: ''
+  /sales/{id}/:
+    get:
+      operationId: sales_retrieve
+      description: |-
+        Refund-only Sale ViewSet.
+
+        RESPONSIBILITIES:
+        - Expose refund endpoint
+        - Enforce authorization
+        - Delegate all business logic
+
+        GUARANTEES:
+        - No sale creation
+        - No stock logic
+        - No direct DB mutation
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this sale.
+        required: true
+      tags:
+      - sales
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+          description: ''
+  /sales/{id}/refund/:
+    post:
+      operationId: sales_refund_create
+      description: |-
+        Refund a completed sale.
+
+        FLOW:
+        - Validate lifecycle
+        - Restore stock atomically
+        - Create immutable audit record
+
+        ERROR CONTRACT:
+        - INVALID_SALE_STATE -> 400
+        - SALE_ALREADY_REFUNDED -> 409
+        - REFUND_FAILED -> 400
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this sale.
+        required: true
+      tags:
+      - sales
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Sale'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Sale'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Sale'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+          description: ''
+  /sales/checkout/:
+    post:
+      operationId: sales_checkout_create
+      description: Finalize active cart and create an immutable sale
+      tags:
+      - sales
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutInput'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CheckoutInput'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CheckoutInput'
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+          description: ''
+components:
+  schemas:
+    AddCartItemInput:
+      type: object
+      properties:
+        product_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+      required:
+      - product_id
+      - quantity
+    Cart:
+      type: object
+      description: |-
+        Serializer for POS cart.
+
+        Design guarantees:
+        - subtotal_amount is derived from model logic
+        - items are read-only
+        - cart is immutable from API except via services
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        user:
+          type: string
+          format: uuid
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItem'
+          readOnly: true
+        item_count:
+          type: integer
+          readOnly: true
+        subtotal_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - is_active
+      - item_count
+      - items
+      - subtotal_amount
+      - updated_at
+      - user
+    CartItem:
+      type: object
+      description: Serializer for individual cart line items.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        product:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          description: Must be greater than zero
+        unit_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Snapshot price at time of adding to cart
+        line_total:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - line_total
+      - product
+      - quantity
+      - unit_price
+    Category:
+      type: object
+      description: Simple Category serializer (read-only for now)
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - name
+    CheckoutInput:
+      type: object
+      description: |-
+        Explicit checkout input serializer.
+
+        Documents ONLY what the client
+        is allowed to send.
+      properties:
+        payment_method:
+          type: string
+          default: cash
+          description: Payment method (cash, card, transfer, etc.)
+    Login:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          writeOnly: true
+      required:
+      - email
+      - password
+    LoginResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+      required:
+      - email
+      - message
+      - role
+      - user_id
+    Me:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        role:
+          type: string
+      required:
+      - email
+      - first_name
+      - id
+      - last_name
+      - role
+    PaginatedCategoryList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+    PaginatedProductList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+    PaginatedSaleList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Sale'
+    PaginatedStockBatchList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockBatch'
+    PatchedCategory:
+      type: object
+      description: Simple Category serializer (read-only for now)
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedProduct:
+      type: object
+      description: |-
+        Canonical Product Serializer.
+
+        - category is write-only UUID (optional)
+        - category_name is read-only
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        sku:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+          maxLength: 255
+        category:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        category_name:
+          type: string
+          readOnly: true
+        unit_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+        low_stock_threshold:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        total_stock:
+          type: integer
+          readOnly: true
+          default: 0
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedStockBatch:
+      type: object
+      description: |-
+        Serializer for inventory stock batches.
+
+        GUARANTEES:
+        - Creates batch metadata only
+        - Stock initialization delegated to service layer
+        - Immutable after creation
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        product:
+          type: string
+          readOnly: true
+        product_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        batch_number:
+          type: string
+          maxLength: 128
+        expiry_date:
+          type: string
+          format: date
+        quantity_received:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        quantity_remaining:
+          type: integer
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedUpdateCartItemInput:
+      type: object
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+    Product:
+      type: object
+      description: |-
+        Canonical Product Serializer.
+
+        - category is write-only UUID (optional)
+        - category_name is read-only
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        sku:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+          maxLength: 255
+        category:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        category_name:
+          type: string
+          readOnly: true
+        unit_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+        low_stock_threshold:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        total_stock:
+          type: integer
+          readOnly: true
+          default: 0
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - category_name
+      - created_at
+      - id
+      - name
+      - sku
+      - total_stock
+      - unit_price
+      - updated_at
+    Register:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          writeOnly: true
+        first_name:
+          type: string
+        last_name:
+          type: string
+        role:
+          type: string
+      required:
+      - email
+      - password
+    Sale:
+      type: object
+      description: |-
+        Canonical Sale serializer.
+
+        NOTE:
+        - customer_name is serializer-only (non-persistent)
+        - Used for receipts / UI display
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        invoice_no:
+          type: string
+          readOnly: true
+          description: System-generated invoice / receipt number
+        user:
+          type: string
+          format: uuid
+          nullable: true
+          description: Cashier / staff who processed the sale
+        customer_name:
+          type: string
+          writeOnly: true
+          description: Optional walk-in customer name (not persisted)
+        subtotal_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        tax_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        discount_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+        payment_method:
+          type: string
+          maxLength: 32
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        completed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - completed_at
+      - created_at
+      - id
+      - invoice_no
+    StatusEnum:
+      enum:
+      - draft
+      - completed
+      - refunded
+      type: string
+      description: |-
+        * `draft` - Draft
+        * `completed` - Completed
+        * `refunded` - Refunded
+    StockBatch:
+      type: object
+      description: |-
+        Serializer for inventory stock batches.
+
+        GUARANTEES:
+        - Creates batch metadata only
+        - Stock initialization delegated to service layer
+        - Immutable after creation
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        product:
+          type: string
+          readOnly: true
+        product_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        batch_number:
+          type: string
+          maxLength: 128
+        expiry_date:
+          type: string
+          format: date
+        quantity_received:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        quantity_remaining:
+          type: integer
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - batch_number
+      - created_at
+      - expiry_date
+      - id
+      - is_active
+      - product
+      - product_id
+      - quantity_received
+      - quantity_remaining
+    TokenObtainPair:
+      type: object
+      properties:
+        email:
+          type: string
+          writeOnly: true
+        password:
+          type: string
+          writeOnly: true
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+          readOnly: true
+      required:
+      - access
+      - email
+      - password
+      - refresh
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
