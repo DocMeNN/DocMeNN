@@ -1,8 +1,9 @@
+# .github/workflows/db-backup.yml
 name: Daily Database Backup (Render Postgres -> R2)
 
 on:
   schedule:
-    - cron: "0 1 * * *"  # 1 AM UTC daily
+    - cron: "0 1 * * *" # 1 AM UTC daily
   workflow_dispatch:
 
 jobs:
@@ -11,8 +12,15 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install PostgreSQL 18 client (pg_dump)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg lsb-release ca-certificates
+          wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-18
 
       - name: Create database dump
         env:
@@ -51,7 +59,6 @@ jobs:
         run: |
           set -euo pipefail
           ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          # List and sort objects, delete everything except newest 7
           aws s3 ls "s3://${R2_BUCKET}/" --endpoint-url "$ENDPOINT" \
             | awk '{print $4}' \
             | sort \
