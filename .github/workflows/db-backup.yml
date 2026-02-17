@@ -9,16 +9,28 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies (so Django can import apps)
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r pharmacy_backend/requirements.txt
+          python -c "import drf_spectacular; print('drf_spectacular OK')"
 
       - name: Install PostgreSQL client + AWS CLI
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
-          sudo apt-get install -y awscli
+          sudo apt-get install -y postgresql-client awscli
 
       - name: Run backup + upload to R2
         env:
