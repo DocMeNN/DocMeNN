@@ -87,12 +87,17 @@ jobs:
           aws s3 cp "s3://${R2_BUCKET}/${LATEST}" ./latest.dump --endpoint-url "$ENDPOINT"
           ls -lh ./latest.dump
 
-      - name: Restore dump into temporary database
+      - name: Restore dump into temporary database (portable restore)
         run: |
           set -euo pipefail
           export PGPASSWORD="testpass"
 
+          # Key flags for cross-environment restore:
+          # --no-owner: ignore original DB role ownership
+          # --no-acl:   ignore GRANT/REVOKE privileges
           /usr/lib/postgresql/18/bin/pg_restore \
+            --no-owner \
+            --no-acl \
             -h localhost \
             -U testuser \
             -d testdb \
@@ -103,8 +108,17 @@ jobs:
           set -euo pipefail
           export PGPASSWORD="testpass"
 
-          # Show tables (will succeed even if empty schema exists)
+          # Tables list (schema restored)
           /usr/lib/postgresql/18/bin/psql -h localhost -U testuser -d testdb -c "\dt"
 
-          # Hard success marker
+          # A stronger signal: count how many tables exist
+          COUNT=$(/usr/lib/postgresql/18/bin/psql -h localhost -U testuser -d testdb -tAc \
+            "select count(*) from pg_catalog.pg_tables where schemaname='public';")
+          echo "Public tables count: ${COUNT}"
+
+          if [ "${COUNT}" -lt 5 ]; then
+            echo "Restore completed but table count is unexpectedly low."
+            exit 1
+          fi
+
           echo "✅ Backup restore verification successful."
