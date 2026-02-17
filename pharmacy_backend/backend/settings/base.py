@@ -1,19 +1,12 @@
 # backend/settings/base.py
 """
-PATH: backend/settings/base.py
-
 BASE SETTINGS (shared by dev + prod)
 
-Phase 4/5 Hardening:
-- Environment variables for secrets (django-environ)
-- Paystack configuration under settings.PAYMENTS["PAYSTACK"]
-- Backend authoritative totals (frontend never calculates money)
-
-ENV LOADING (AIRTIGHT):
-- Reads .env from:
-  1) BASE_DIR/.env              (e.g. pharmacy_backend/.env)
-  2) BASE_DIR.parent/.env       (e.g. pharmacy_app/.env)
-This supports both common project layouts safely.
+Operational maturity:
+- Throttling (already)
+- Frontend redirect base (already)
+- Legacy checkout kill-switch (already)
+- Sentry (NEW): error visibility in production
 """
 
 from __future__ import annotations
@@ -27,7 +20,7 @@ from corsheaders.defaults import default_headers, default_methods
 # -----------------------------------------
 # BASE DIRECTORY
 # -----------------------------------------
-BASE_DIR = Path(__file__).resolve().parent.parent.parent  # -> pharmacy_backend/
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # -----------------------------------------
 # ENV (django-environ)
@@ -40,16 +33,36 @@ env = environ.Env(
     CORS_ALLOWED_ORIGINS=(list, ["http://localhost:5173"]),
     CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:5173"]),
     DATABASE_URL=(str, f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
+
     PAYSTACK_SECRET_KEY=(str, ""),
     PAYSTACK_PUBLIC_KEY=(str, ""),
     PAYSTACK_CALLBACK_URL=(str, ""),
+
+    # Throttling
+    THROTTLE_ANON_RATE=(str, "60/min"),
+    THROTTLE_USER_RATE=(str, "600/min"),
+    THROTTLE_PUBLIC_POLL_RATE=(str, "120/min"),
+    THROTTLE_PUBLIC_WRITE_RATE=(str, "10/min"),
+    THROTTLE_PUBLIC_CATALOG_RATE=(str, "120/min"),
+    THROTTLE_WEBHOOK_RATE=(str, "600/min"),
+
+    FRONTEND_BASE_URL=(str, "http://localhost:5173"),
+
+    # Kill switch (legacy public checkout)
+    PUBLIC_LEGACY_CHECKOUT_ENABLED=(bool, True),
+
+    # Sentry (optional; enable by setting SENTRY_DSN)
+    SENTRY_DSN=(str, ""),
+    SENTRY_ENVIRONMENT=(str, "development"),
+    SENTRY_TRACES_SAMPLE_RATE=(float, 0.0),
+    SENTRY_SEND_PII=(bool, False),
 )
 
 # -----------------------------------------
-# LOAD .env (AIRTIGHT: support both layouts)
+# LOAD .env
 # -----------------------------------------
-env_file_1 = BASE_DIR / ".env"          # pharmacy_backend/.env
-env_file_2 = BASE_DIR.parent / ".env"   # pharmacy_app/.env
+env_file_1 = BASE_DIR / ".env"
+env_file_2 = BASE_DIR.parent / ".env"
 
 if env_file_1.exists():
     env.read_env(str(env_file_1))
@@ -57,14 +70,11 @@ elif env_file_2.exists():
     env.read_env(str(env_file_2))
 
 # -----------------------------------------
-# SECURITY (shared; prod hardens further)
+# CORE SECURITY
 # -----------------------------------------
 SECRET_KEY = (env("SECRET_KEY") or "dev-insecure-change-me").strip()
 DEBUG = env.bool("DEBUG")
 
-# -----------------------------------------
-# HOSTS
-# -----------------------------------------
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 
 # -----------------------------------------
@@ -83,7 +93,6 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "drf_spectacular",
     "django_filters",
-    # Internal apps
     "accounting",
     "users",
     "products",
@@ -91,7 +100,6 @@ INSTALLED_APPS = [
     "store.apps.StoreConfig",
     "pos",
     "purchases",
-    # Public Online Store module (AllowAny)
     "public.apps.PublicConfig",
 ]
 
@@ -131,6 +139,18 @@ REST_FRAMEWORK = {
     "PAGE_SIZE_QUERY_PARAM": "page_size",
     "MAX_PAGE_SIZE": 100,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_CLASSES": (
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": env("THROTTLE_ANON_RATE"),
+        "user": env("THROTTLE_USER_RATE"),
+        "public_poll": env("THROTTLE_PUBLIC_POLL_RATE"),
+        "public_write": env("THROTTLE_PUBLIC_WRITE_RATE"),
+        "public_catalog": env("THROTTLE_PUBLIC_CATALOG_RATE"),
+        "webhook": env("THROTTLE_WEBHOOK_RATE"),
+    },
 }
 
 # -----------------------------------------
@@ -141,39 +161,7 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
-    "AUTH_HEADER_TYPES": ("Bearer",),
-    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
-    "USER_ID_FIELD": "id",
-    "USER_ID_CLAIM": "user_id",
 }
-
-# -----------------------------------------
-# USER MODEL & AUTH
-# -----------------------------------------
-AUTH_USER_MODEL = "users.User"
-
-AUTHENTICATION_BACKENDS = [
-    "users.backends.EmailBackend",
-    "django.contrib.auth.backends.ModelBackend",
-]
-
-# -----------------------------------------
-# TEMPLATES
-# -----------------------------------------
-TEMPLATES = [
-    {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
-        "APP_DIRS": True,
-        "OPTIONS": {
-            "context_processors": [
-                "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
-                "django.contrib.messages.context_processors.messages",
-            ],
-        },
-    },
-]
 
 # -----------------------------------------
 # DATABASE
@@ -183,44 +171,17 @@ DATABASES = {
 }
 
 # -----------------------------------------
-# PASSWORD VALIDATION
+# FRONTEND BASE URL
 # -----------------------------------------
-AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
-]
+FRONTEND_BASE_URL = (env("FRONTEND_BASE_URL") or "http://localhost:5173").strip()
 
 # -----------------------------------------
-# I18N
+# LEGACY CHECKOUT TOGGLE
 # -----------------------------------------
-LANGUAGE_CODE = "en-us"
-TIME_ZONE = env("TIME_ZONE")
-USE_I18N = True
-USE_TZ = True
+PUBLIC_LEGACY_CHECKOUT_ENABLED = env.bool("PUBLIC_LEGACY_CHECKOUT_ENABLED")
 
 # -----------------------------------------
-# STATIC FILES (prod adds STATIC_ROOT)
-# -----------------------------------------
-STATIC_URL = "static/"
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# -----------------------------------------
-# CORS CONFIG
-# -----------------------------------------
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_METHODS = list(default_methods)
-CORS_ALLOW_HEADERS = list(default_headers)
-
-# -----------------------------------------
-# CSRF
-# -----------------------------------------
-CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS")
-
-# -----------------------------------------
-# PAYMENTS (PHASE 4)
+# PAYMENTS
 # -----------------------------------------
 PAYMENTS = {
     "PAYSTACK": {
@@ -231,7 +192,47 @@ PAYMENTS = {
 }
 
 # -----------------------------------------
-# SWAGGER / OPENAPI
+# SENTRY (optional)
+# -----------------------------------------
+SENTRY_DSN = (env("SENTRY_DSN") or "").strip()
+SENTRY_ENVIRONMENT = (env("SENTRY_ENVIRONMENT") or "development").strip()
+SENTRY_TRACES_SAMPLE_RATE = float(env("SENTRY_TRACES_SAMPLE_RATE"))
+SENTRY_SEND_PII = env.bool("SENTRY_SEND_PII")
+
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            environment=SENTRY_ENVIRONMENT,
+            integrations=[DjangoIntegration()],
+            traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+            send_default_pii=SENTRY_SEND_PII,
+        )
+    except Exception:
+        # Never block app startup because monitoring failed.
+        pass
+
+# -----------------------------------------
+# CORS / CSRF
+# -----------------------------------------
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_METHODS = list(default_methods)
+CORS_ALLOW_HEADERS = list(default_headers)
+
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS")
+
+# -----------------------------------------
+# STATIC FILES
+# -----------------------------------------
+STATIC_URL = "static/"
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# -----------------------------------------
+# SWAGGER
 # -----------------------------------------
 SPECTACULAR_SETTINGS = {
     "TITLE": "Pharmacy Backend API",

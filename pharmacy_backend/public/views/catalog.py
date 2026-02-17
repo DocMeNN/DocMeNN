@@ -1,5 +1,4 @@
 # public/views/catalog.py
-
 """
 PUBLIC CATALOG (ONLINE STORE)
 
@@ -10,6 +9,9 @@ Rules:
 - Store-scoped (store_id required)
 - Backend is source of truth for product data
 - Does NOT expose internal cost data
+
+Security hardening:
+- Throttle to reduce scraping/abuse (cost-effective)
 """
 
 from __future__ import annotations
@@ -21,11 +23,16 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status, serializers
 from rest_framework.parsers import JSONParser
+from rest_framework.throttling import AnonRateThrottle
 
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from store.models import Store
 from products.models import Product
+
+
+class PublicCatalogThrottle(AnonRateThrottle):
+    scope = "public_catalog"
 
 
 class PublicCatalogQuerySerializer(serializers.Serializer):
@@ -45,6 +52,7 @@ class PublicCatalogView(APIView):
     """
     permission_classes = [AllowAny]
     parser_classes = [JSONParser]
+    throttle_classes = [PublicCatalogThrottle]
 
     @extend_schema(
         tags=["Public"],
@@ -61,6 +69,7 @@ class PublicCatalogView(APIView):
             200: PublicCatalogItemSerializer(many=True),
             400: OpenApiResponse(description="Bad request / validation error"),
             404: OpenApiResponse(description="Store not found"),
+            429: OpenApiResponse(description="Rate limited"),
         },
         description="Public product catalog for a store (AllowAny).",
     )
@@ -80,12 +89,10 @@ class PublicCatalogView(APIView):
             Product._meta.get_field("store")
             products = products.filter(store=store)
         except FieldDoesNotExist:
-            # If there's no "store" FK, try store_id if present
             try:
                 Product._meta.get_field("store_id")
                 products = products.filter(store_id=store.id)
             except FieldDoesNotExist:
-                # No store field on product model; leave unscoped (still store existence-gated)
                 pass
 
         products = products.order_by("name")

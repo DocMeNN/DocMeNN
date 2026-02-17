@@ -14,6 +14,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import JSONParser
+from rest_framework.throttling import AnonRateThrottle
 
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
@@ -30,6 +31,22 @@ from public.serializers import (
 from public.services.paystack import paystack_initialize_transaction
 
 TWOPLACES = Decimal("0.01")
+
+
+class PublicWriteThrottle(AnonRateThrottle):
+    """
+    For public write endpoints (initiate checkout, legacy checkout).
+    Uses REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['public_write'].
+    """
+    scope = "public_write"
+
+
+class PublicPollThrottle(AnonRateThrottle):
+    """
+    For public polling endpoints (order status).
+    Uses REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['public_poll'].
+    """
+    scope = "public_poll"
 
 
 def _money(v) -> Decimal:
@@ -93,6 +110,7 @@ def _paystack_callback_url() -> str:
 class PublicOrderInitiateView(APIView):
     permission_classes = [AllowAny]
     parser_classes = [JSONParser]
+    throttle_classes = [PublicWriteThrottle]
 
     @extend_schema(
         tags=["Public"],
@@ -102,6 +120,7 @@ class PublicOrderInitiateView(APIView):
             400: OpenApiResponse(description="Validation error"),
             404: OpenApiResponse(description="Store not found"),
             409: OpenApiResponse(description="Insufficient stock"),
+            429: OpenApiResponse(description="Rate limited"),
             502: OpenApiResponse(description="Payment provider error"),
         },
         description="Phase 4 safe checkout: create OnlineOrder (pending payment) + init Paystack.",
@@ -245,10 +264,11 @@ class PublicOrderInitiateView(APIView):
 class PublicOrderStatusView(APIView):
     permission_classes = [AllowAny]
     parser_classes = [JSONParser]
+    throttle_classes = [PublicPollThrottle]
 
     @extend_schema(
         tags=["Public"],
-        responses={200: PublicOrderStatusResponseSerializer},
+        responses={200: PublicOrderStatusResponseSerializer, 429: OpenApiResponse(description="Rate limited")},
     )
     def get(self, request, order_id, *args, **kwargs):
         order = get_object_or_404(OnlineOrder, id=order_id)

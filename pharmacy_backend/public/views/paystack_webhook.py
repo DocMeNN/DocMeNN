@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from accounting.services.exceptions import (
@@ -23,6 +24,14 @@ from public.services.paystack import verify_paystack_signature, verify_paystack_
 from sales.models import OnlineOrder, OnlineOrderItem, PaymentAttempt, Sale, SaleItem
 
 TWOPLACES = Decimal("0.01")
+
+
+class WebhookThrottle(AnonRateThrottle):
+    """
+    Keep high. We MUST avoid blocking provider retries.
+    Uses REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['webhook'].
+    """
+    scope = "webhook"
 
 
 def _money(v) -> Decimal:
@@ -80,16 +89,6 @@ def _mark_attempt_failed(attempt: PaymentAttempt, payload, *, reason: str):
 
 @transaction.atomic
 def _finalize_order_to_sale(*, order_id):
-    """
-    Atomic + idempotent finalization:
-    - lock order row
-    - if already linked, return existing sale
-    - create sale + items
-    - deduct FIFO
-    - mark completed
-    - post to ledger (idempotent reference inside posting service)
-    - link order.sale
-    """
     order = OnlineOrder.objects.select_for_update().get(id=order_id)
 
     if getattr(order, "sale_id", None):
@@ -154,6 +153,7 @@ def _finalize_order_to_sale(*, order_id):
 class PaystackWebhookView(APIView):
     permission_classes = [AllowAny]
     parser_classes = [JSONParser]
+    throttle_classes = [WebhookThrottle]
 
     def post(self, request, *args, **kwargs):
         raw_body = getattr(request, "body", b"") or b""
@@ -163,6 +163,7 @@ class PaystackWebhookView(APIView):
             signature = None
 
         if not verify_paystack_signature(raw_body=raw_body, signature=signature):
+            # Ack as 400 is OK; Paystack may retry. Signature failures should not pass.
             return Response({"ok": False, "detail": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
 
         payload = request.data or {}
@@ -170,7 +171,6 @@ class PaystackWebhookView(APIView):
 
         reference = str(data.get("reference") or "").strip()
         if not reference:
-            # always ack 200 for empty ref to stop retries
             return Response({"ok": True, "detail": "No reference"}, status=status.HTTP_200_OK)
 
         try:
@@ -182,14 +182,11 @@ class PaystackWebhookView(APIView):
                     .first()
                 )
                 if not attempt:
-                    # ack 200: unknown reference (safe)
                     return Response({"ok": True, "detail": "Unknown reference"}, status=status.HTTP_200_OK)
 
-                # idempotent ack
                 if getattr(attempt, "status", "") == _attempt_status("STATUS_VERIFIED", "verified"):
                     return Response({"ok": True, "detail": "Already verified"}, status=status.HTTP_200_OK)
 
-                # server-to-server verification (truth)
                 verify = verify_paystack_transaction(reference=reference)
                 if (not verify.get("ok")) or (str(verify.get("status") or "").lower() != "success"):
                     _mark_attempt_failed(attempt, payload, reason="Verify API: not successful")
@@ -215,14 +212,12 @@ class PaystackWebhookView(APIView):
                     else:
                         order.save(update_fields=["status"])
 
-            # finalize outside attempt lock; still atomic + order-locked inside
             if order_id:
                 _finalize_order_to_sale(order_id=order_id)
 
             return Response({"ok": True, "detail": "Processed"}, status=status.HTTP_200_OK)
 
         except InsufficientStockError as exc:
-            # payment verified but stock changed: cancel order + fail attempt (reconciliation path)
             try:
                 with transaction.atomic():
                     attempt = PaymentAttempt.objects.filter(reference=reference).select_related("order").first()
@@ -235,7 +230,6 @@ class PaystackWebhookView(APIView):
             return Response({"ok": True, "detail": "Stock changed; order cancelled"}, status=status.HTTP_200_OK)
 
         except (JournalEntryCreationError, IdempotencyError, AccountResolutionError) as exc:
-            # payment verified; posting failed: keep order as PAID, log payload for reconciliation
             try:
                 attempt = PaymentAttempt.objects.filter(reference=reference).first()
                 if attempt and hasattr(attempt, "provider_payload"):
@@ -246,5 +240,4 @@ class PaystackWebhookView(APIView):
             return Response({"ok": True, "detail": "Paid; posting error logged"}, status=status.HTTP_200_OK)
 
         except Exception:
-            # ack 200 to prevent provider retry storms
             return Response({"ok": True, "detail": "Unhandled error"}, status=status.HTTP_200_OK)

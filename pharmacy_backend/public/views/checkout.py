@@ -1,5 +1,4 @@
 # public/views/checkout.py
-
 """
 PUBLIC CHECKOUT (ONLINE STORE) — LEGACY V1
 
@@ -10,23 +9,12 @@ It is kept for:
 - manual transfer confirmation
 - internal testing
 
-For card/Paystack payments, use (to be added in Step 5/6):
-- POST /api/public/order/initiate/            -> creates OnlineOrder + initializes Paystack
-- POST /api/public/payments/paystack/webhook/ -> verifies payment and finalizes Sale
+For card/Paystack payments, use:
+- POST /api/public/order/initiate/
+- POST /api/public/payments/paystack/webhook/
 
-Base:
-- POST /api/public/checkout/             (AllowAny)  [LEGACY]
-- GET  /api/public/receipt/<sale_id>/    (AllowAny)
-
-Rules:
-- Store-scoped (store_id required)
-- Public cart is client-side in V1 (localStorage). Backend receives items payload.
-- Backend is the source of truth:
-  - validates stock per store
-  - deducts FIFO
-  - creates immutable Sale + SaleItems
-  - optional split payments create immutable SalePaymentAllocation legs
-  - posts to accounting ledger
+Security hardening:
+- Throttle (public_write) because it's a write endpoint (abuse target)
 """
 
 from __future__ import annotations
@@ -42,6 +30,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status, serializers
 from rest_framework.parsers import JSONParser
+from rest_framework.throttling import AnonRateThrottle
 
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
@@ -59,11 +48,13 @@ from accounting.services.exceptions import (
     AccountResolutionError,
 )
 
-# ✅ Canonical public contracts live here (single source of truth)
 from public.serializers import PublicCartItemSerializer
 
-
 TWOPLACES = Decimal("0.01")
+
+
+class PublicWriteThrottle(AnonRateThrottle):
+    scope = "public_write"
 
 
 def _money(v) -> Decimal:
@@ -92,10 +83,6 @@ def _normalize_payment_method(method: str | None) -> str:
 
 
 def _validate_and_normalize_allocations(allocations) -> list[dict]:
-    """
-    allocations: list of dicts: {method, amount, reference?, note?}
-    Returns normalized list with Decimal 2dp amounts.
-    """
     if not allocations:
         return []
 
@@ -124,10 +111,6 @@ def _validate_and_normalize_allocations(allocations) -> list[dict]:
 
     return out
 
-
-# -----------------------------
-# Input serializers (legacy-only)
-# -----------------------------
 
 class PublicPaymentAllocationSerializer(serializers.Serializer):
     method = serializers.ChoiceField(choices=["cash", "bank", "pos", "transfer", "credit"])
@@ -159,11 +142,9 @@ class PublicReceiptItemSerializer(serializers.ModelSerializer):
 
 
 class PublicCheckoutView(APIView):
-    """
-    POST /api/public/checkout/  (LEGACY)
-    """
     permission_classes = [AllowAny]
     parser_classes = [JSONParser]
+    throttle_classes = [PublicWriteThrottle]
 
     @extend_schema(
         request=PublicCheckoutInputSerializer,
@@ -171,6 +152,7 @@ class PublicCheckoutView(APIView):
             201: SaleSerializer,
             400: OpenApiResponse(description="Bad request / validation error"),
             409: OpenApiResponse(description="Stock validation conflict"),
+            429: OpenApiResponse(description="Rate limited"),
         },
         description=(
             "LEGACY public checkout (AllowAny). Creates Sale immediately. "
@@ -270,7 +252,6 @@ class PublicCheckoutView(APIView):
 
         sale.save(update_fields=["subtotal_amount", "total_amount", "status", "completed_at"])
 
-        # Split allocations (legacy)
         if normalized_allocs:
             alloc_total = _money(sum((a["amount"] for a in normalized_allocs), Decimal("0.00")))
             if alloc_total != total:
@@ -303,9 +284,6 @@ class PublicCheckoutView(APIView):
 
 
 class PublicReceiptView(APIView):
-    """
-    GET /api/public/receipt/<sale_id>/
-    """
     permission_classes = [AllowAny]
     parser_classes = [JSONParser]
 

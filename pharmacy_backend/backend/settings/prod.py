@@ -1,59 +1,118 @@
 # backend/settings/prod.py
 """
-PATH: backend/settings/prod.py
-
 PRODUCTION SETTINGS (Render)
 
-Hardening goals:
-- DEBUG off
+Hardening goals (FINISHING MOVE):
+- DEBUG off (forced)
+- SECRET_KEY must be set (fail-closed)
+- Postgres-only (NO sqlite fallback)
 - Security headers sane
 - Proxy SSL header set for Render
 - Static collection target set
-- CORS/CSRF are explicit (no localhost assumptions)
+- CORS/CSRF are explicit (no localhost assumptions, https only)
+- Cookie flags hardened
 """
 
 from __future__ import annotations
 
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa
 
-DEBUG = env.bool("DEBUG", default=False)
+# ----------------------------
+# DEBUG (force off)
+# ----------------------------
+DEBUG = False
 
-# In prod you MUST set these via env vars on Render
+# ----------------------------
+# SECRET KEY (fail closed)
+# ----------------------------
+_secret_key = (env("SECRET_KEY", default="") or "").strip()
+if not _secret_key or _secret_key == "dev-insecure-change-me":
+    raise ImproperlyConfigured("SECRET_KEY must be set to a strong value in production.")
+SECRET_KEY = _secret_key
+
+# ----------------------------
+# Hosts (must be set on Render)
+# ----------------------------
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[])
+if not ALLOWED_HOSTS:
+    raise ImproperlyConfigured("ALLOWED_HOSTS must be set in production.")
 
-# Static files for collectstatic
+# ----------------------------
+# Database (Render Managed Postgres) — POSTGRES ONLY
+# ----------------------------
+database_url_raw = (env("DATABASE_URL", default="") or "").strip()
+if not database_url_raw:
+    raise ImproperlyConfigured("DATABASE_URL must be set in production (Render Postgres).")
+
+if database_url_raw.startswith("sqlite"):
+    raise ImproperlyConfigured("Refusing to start in production with SQLite DATABASE_URL.")
+
+DATABASES = {"default": env.db("DATABASE_URL")}
+DATABASES["default"]["CONN_MAX_AGE"] = env.int("DB_CONN_MAX_AGE", default=60)
+
+# ----------------------------
+# Static files (collectstatic)
+# ----------------------------
 STATIC_ROOT = env("STATIC_ROOT", default=str(BASE_DIR / "staticfiles"))
 
-# Render sits behind a proxy: respect X-Forwarded-Proto
+# WhiteNoise (static serving)
+MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# ----------------------------
+# Proxy / SSL (Render sits behind a proxy)
+# ----------------------------
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-
-# Reasonable cookie security (works fine behind HTTPS)
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
-
-# If you terminate SSL at the proxy, this keeps Django honest
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
 
-# HSTS (start modest; increase later)
+# HSTS (start modest; can increase later)
 SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=3600)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True)
 SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=False)
 
-# Tighten common headers
+# ----------------------------
+# Cookie hardening
+# ----------------------------
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = True  # Safe if you are NOT reading CSRF cookie in JS (recommended for JWT APIs)
+
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
+# ----------------------------
+# Security headers
+# ----------------------------
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 
-# CORS/CSRF must be explicit in prod
+# ----------------------------
+# CORS / CSRF (explicit + https only)
+# ----------------------------
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
-# Optional WhiteNoise (safe add: only activates if installed)
-try:
-    import whitenoise  # noqa: F401
+if not CORS_ALLOWED_ORIGINS:
+    raise ImproperlyConfigured("CORS_ALLOWED_ORIGINS must be set in production.")
+if not CSRF_TRUSTED_ORIGINS:
+    raise ImproperlyConfigured("CSRF_TRUSTED_ORIGINS must be set in production.")
 
-    MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
-    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-except Exception:
-    # If whitenoise isn't installed yet, prod can still boot.
-    # You can enable it by adding "whitenoise" to requirements later.
-    pass
+# No localhost/http in production
+if any("localhost" in o or "127.0.0.1" in o for o in CORS_ALLOWED_ORIGINS):
+    raise ImproperlyConfigured("Remove localhost from CORS_ALLOWED_ORIGINS in production.")
+if any("localhost" in o or "127.0.0.1" in o for o in CSRF_TRUSTED_ORIGINS):
+    raise ImproperlyConfigured("Remove localhost from CSRF_TRUSTED_ORIGINS in production.")
+if any(o.startswith("http://") for o in CORS_ALLOWED_ORIGINS):
+    raise ImproperlyConfigured("CORS_ALLOWED_ORIGINS must be https:// in production.")
+if any(o.startswith("http://") for o in CSRF_TRUSTED_ORIGINS):
+    raise ImproperlyConfigured("CSRF_TRUSTED_ORIGINS must be https:// in production.")
+
+# With JWT Authorization headers, you typically do NOT need credentialed CORS.
+# This reduces cookie risk across origins.
+CORS_ALLOW_CREDENTIALS = False
