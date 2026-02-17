@@ -35,9 +35,16 @@ jobs:
 
           echo "BACKUP_FILE=$FILE" >> $GITHUB_ENV
 
-      - name: Install AWS CLI
+      - name: Ensure AWS CLI is available
         run: |
           set -euo pipefail
+          if command -v aws >/dev/null 2>&1; then
+            echo "AWS CLI already installed:"
+            aws --version
+            exit 0
+          fi
+
+          echo "AWS CLI not found. Installing..."
           curl -sS "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip -q awscliv2.zip
           sudo ./aws/install
