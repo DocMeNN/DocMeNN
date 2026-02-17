@@ -3,7 +3,7 @@ name: Monthly Backup Restore Verification
 
 on:
   schedule:
-    - cron: "0 2 1 * *"  # 1st of every month at 2 AM UTC
+    - cron: "0 2 1 * *" # 1st of every month at 2 AM UTC
   workflow_dispatch:
 
 jobs:
@@ -27,22 +27,39 @@ jobs:
           --health-retries=5
 
     steps:
-      - name: Install PostgreSQL client 18
+      - name: Install PostgreSQL 18 client (pg_restore/psql)
         run: |
           set -euo pipefail
           sudo apt-get update
+          sudo apt-get install -y wget gnupg lsb-release ca-certificates
+
+          # Add official PostgreSQL apt repo (pgdg) for Ubuntu noble
+          wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+
+          sudo apt-get update
           sudo apt-get install -y postgresql-client-18
+
+          echo "pg_restore version:"
+          /usr/lib/postgresql/18/bin/pg_restore --version
+          echo "psql version:"
+          /usr/lib/postgresql/18/bin/psql --version
 
       - name: Ensure AWS CLI is available
         run: |
           set -euo pipefail
           if command -v aws >/dev/null 2>&1; then
+            echo "AWS CLI already installed:"
             aws --version
             exit 0
           fi
+
+          echo "AWS CLI not found. Installing..."
           curl -sS "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip -q awscliv2.zip
           sudo ./aws/install
+          aws --version
 
       - name: Download latest backup from R2
         env:
@@ -54,18 +71,28 @@ jobs:
           set -euo pipefail
           ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 
-          LATEST=$(aws s3 ls "s3://${R2_BUCKET}/" --endpoint-url "$ENDPOINT" \
-            | awk '{print $4}' \
-            | sort \
-            | tail -n 1)
+          LATEST=$(
+            aws s3 ls "s3://${R2_BUCKET}/" --endpoint-url "$ENDPOINT" \
+              | awk '{print $4}' \
+              | sort \
+              | tail -n 1
+          )
 
-          echo "Latest backup: $LATEST"
+          if [ -z "${LATEST}" ]; then
+            echo "No backups found in bucket: ${R2_BUCKET}"
+            exit 1
+          fi
+
+          echo "Latest backup: ${LATEST}"
           aws s3 cp "s3://${R2_BUCKET}/${LATEST}" ./latest.dump --endpoint-url "$ENDPOINT"
+          ls -lh ./latest.dump
 
       - name: Restore dump into temporary database
         run: |
           set -euo pipefail
-          PGPASSWORD=testpass /usr/lib/postgresql/18/bin/pg_restore \
+          export PGPASSWORD="testpass"
+
+          /usr/lib/postgresql/18/bin/pg_restore \
             -h localhost \
             -U testuser \
             -d testdb \
@@ -74,6 +101,10 @@ jobs:
       - name: Verify restore (basic validation)
         run: |
           set -euo pipefail
-          PGPASSWORD=testpass psql -h localhost -U testuser -d testdb -c "\dt"
+          export PGPASSWORD="testpass"
 
-          echo "Backup restore verification successful."
+          # Show tables (will succeed even if empty schema exists)
+          /usr/lib/postgresql/18/bin/psql -h localhost -U testuser -d testdb -c "\dt"
+
+          # Hard success marker
+          echo "✅ Backup restore verification successful."
