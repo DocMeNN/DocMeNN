@@ -6,13 +6,15 @@ line-length = 120
 target-version = "py312"
 
 # Ignore rules that are currently noisy across the codebase
+# E501: line too long
+# W292: no newline at end of file
 # E741: ambiguous variable name like l / O / I
 # F401: unused imports
 # F405: from-import-star / undefined name patterns (common in settings splits)
 # F811: redefinition (often duplicate imports)
 # F841: local variable assigned but never used
 # I001: import blocks not sorted/formatted (isort formatting)
-lint.ignore = ["E741", "F401", "F405", "F811", "F841", "I001"]
+lint.ignore = ["E501", "W292", "E741", "F401", "F405", "F811", "F841", "I001"]
 
 # Select core error groups, but DO NOT enforce import sorting for now
 lint.select = ["E", "F", "W"]
