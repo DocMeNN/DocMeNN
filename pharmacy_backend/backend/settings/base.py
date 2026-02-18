@@ -33,11 +33,9 @@ env = environ.Env(
     CORS_ALLOWED_ORIGINS=(list, ["http://localhost:5173"]),
     CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:5173"]),
     DATABASE_URL=(str, f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
-
     PAYSTACK_SECRET_KEY=(str, ""),
     PAYSTACK_PUBLIC_KEY=(str, ""),
     PAYSTACK_CALLBACK_URL=(str, ""),
-
     # Throttling
     THROTTLE_ANON_RATE=(str, "60/min"),
     THROTTLE_USER_RATE=(str, "600/min"),
@@ -45,12 +43,9 @@ env = environ.Env(
     THROTTLE_PUBLIC_WRITE_RATE=(str, "10/min"),
     THROTTLE_PUBLIC_CATALOG_RATE=(str, "120/min"),
     THROTTLE_WEBHOOK_RATE=(str, "600/min"),
-
     FRONTEND_BASE_URL=(str, "http://localhost:5173"),
-
     # Kill switch (legacy public checkout)
     PUBLIC_LEGACY_CHECKOUT_ENABLED=(bool, True),
-
     # Sentry (optional; enable by setting SENTRY_DSN)
     SENTRY_DSN=(str, ""),
     SENTRY_ENVIRONMENT=(str, "development"),
@@ -104,6 +99,12 @@ INSTALLED_APPS = [
 ]
 
 # -----------------------------------------
+# AUTH USER MODEL (CUSTOM USER)
+# -----------------------------------------
+# Required so Django does NOT use auth.User, and to prevent groups/permissions clashes.
+AUTH_USER_MODEL = "users.User"
+
+# -----------------------------------------
 # MIDDLEWARE
 # -----------------------------------------
 MIDDLEWARE = [
@@ -120,6 +121,25 @@ MIDDLEWARE = [
 ROOT_URLCONF = "backend.urls"
 WSGI_APPLICATION = "backend.wsgi.application"
 APPEND_SLASH = True
+
+# -----------------------------------------
+# TEMPLATES (REQUIRED FOR DJANGO ADMIN)
+# -----------------------------------------
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
 
 # -----------------------------------------
 # REST FRAMEWORK
