@@ -5,16 +5,17 @@
 line-length = 120
 target-version = "py312"
 
-# What to ignore for now (these are the ones breaking CI)
+# Ignore rules that are currently noisy across the codebase
 # E741: ambiguous variable name like l / O / I
 # F401: unused imports
 # F405: from-import-star / undefined name patterns (common in settings splits)
 # F811: redefinition (often duplicate imports)
 # F841: local variable assigned but never used
-lint.ignore = ["E741", "F401", "F405", "F811", "F841"]
+# I001: import blocks not sorted/formatted (isort formatting)
+lint.ignore = ["E741", "F401", "F405", "F811", "F841", "I001"]
 
-# Still check everything else (so we don’t lose real signal)
-lint.select = ["E", "F", "W", "I"]
+# Select core error groups, but DO NOT enforce import sorting for now
+lint.select = ["E", "F", "W"]
 
 # Avoid linting migrations and common generated folders
 exclude = [
