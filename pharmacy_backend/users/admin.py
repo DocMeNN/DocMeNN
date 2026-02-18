@@ -1,4 +1,4 @@
-# PATH: users/admin.py
+# users/admin.py
 
 """
 USERS ADMIN REGISTRATION
@@ -18,6 +18,12 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 User = get_user_model()
 
+# If User was registered elsewhere (common in CI/autodiscovery), unregister it first.
+try:
+    admin.site.unregister(User)
+except admin.sites.NotRegistered:
+    pass
+
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
@@ -29,9 +35,18 @@ class UserAdmin(DjangoUserAdmin):
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Profile", {"fields": ("first_name", "last_name", "role")}),
-        ("Permissions", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+        (
+            "Permissions",
+            {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")},
+        ),
     )
 
     add_fieldsets = (
-        (None, {"classes": ("wide",), "fields": ("email", "password1", "password2", "role", "is_staff", "is_active")}),
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": ("email", "password1", "password2", "role", "is_staff", "is_active"),
+            },
+        ),
     )
