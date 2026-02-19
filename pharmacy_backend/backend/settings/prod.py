@@ -1,3 +1,4 @@
+# backend/settings/prod.py
 """
 PATH: backend/settings/prod.py
 
@@ -18,7 +19,7 @@ from __future__ import annotations
 
 from django.core.exceptions import ImproperlyConfigured
 
-from .base import *  # noqa
+from .base import BASE_DIR, MIDDLEWARE, env  # explicit imports (no star import)
 
 # ----------------------------
 # DEBUG (force off)

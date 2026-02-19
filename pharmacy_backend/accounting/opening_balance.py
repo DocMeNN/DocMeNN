@@ -1,5 +1,4 @@
 # accounting/opening_balance.py
-
 """
 PATH: accounting/opening_balance.py
 
@@ -42,8 +41,8 @@ def _to_decimal(value) -> Decimal:
             d = value
         else:
             d = Decimal(str(value))
-    except (InvalidOperation, TypeError) as e:
-        raise OpeningBalanceError(f"Invalid amount: {value!r}") from e
+    except (InvalidOperation, TypeError) as exc:
+        raise OpeningBalanceError(f"Invalid amount: {value!r}") from exc
 
     return d.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
 
@@ -66,9 +65,7 @@ def build_opening_balance_reference_id(
     if not isinstance(as_of_date, date):
         raise OpeningBalanceError("as_of_date must be a date")
 
-    return (
-        f"{str(business_id).strip()}:{str(chart_id).strip()}:{as_of_date.isoformat()}"
-    )
+    return f"{str(business_id).strip()}:{str(chart_id).strip()}:{as_of_date.isoformat()}"
 
 
 @dataclass(frozen=True)
@@ -152,10 +149,12 @@ class OpeningBalancePayload:
 
     def totals(self) -> Tuple[Decimal, Decimal]:
         debit = sum(
-            (l.amount for l in self.lines if l.dc == "D"), start=Decimal("0.00")
+            (line.amount for line in self.lines if line.dc == "D"),
+            start=Decimal("0.00"),
         )
         credit = sum(
-            (l.amount for l in self.lines if l.dc == "C"), start=Decimal("0.00")
+            (line.amount for line in self.lines if line.dc == "C"),
+            start=Decimal("0.00"),
         )
         debit = debit.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
         credit = credit.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
@@ -169,10 +168,10 @@ class OpeningBalancePayload:
             )
 
     def validate_no_duplicate_accounts(self) -> None:
-        seen = set()
-        for l in self.lines:
-            if l.account_code in seen:
+        seen: set[str] = set()
+        for line in self.lines:
+            if line.account_code in seen:
                 raise OpeningBalanceError(
-                    f"Duplicate account_code in lines: {l.account_code}"
+                    f"Duplicate account_code in lines: {line.account_code}"
                 )
-            seen.add(l.account_code)
+            seen.add(line.account_code)

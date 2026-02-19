@@ -1,6 +1,7 @@
-# PATH: accounting/services/opening_balances_service.py
-
+# accounting/services/opening_balances_service.py
 """
+PATH: accounting/services/opening_balances_service.py
+
 OPENING BALANCES SERVICE
 
 Responsibilities:
@@ -79,17 +80,16 @@ def create_opening_balances(
 
     if chart_id is None:
         chart_id = active_chart_id
-    else:
-        if str(chart_id).strip() != active_chart_id:
-            raise OpeningBalancesError(
-                f"chart_id does not match active chart. Passed={chart_id} Active={active_chart_id}"
-            )
+    elif str(chart_id).strip() != active_chart_id:
+        raise OpeningBalancesError(
+            f"chart_id does not match active chart. Passed={chart_id} Active={active_chart_id}"
+        )
 
-    codes = [l.account_code for l in payload.lines]
+    codes = [line.account_code for line in payload.lines]
     accounts = Account.objects.filter(chart=chart, is_active=True, code__in=codes)
     accounts_by_code = {a.code: a for a in accounts}
 
-    missing = [c for c in codes if c not in accounts_by_code]
+    missing = [code for code in codes if code not in accounts_by_code]
     if missing:
         raise AccountResolutionError(
             f"Some account codes were not found in active chart ({getattr(chart, 'name', 'ACTIVE_CHART')}): {missing}"

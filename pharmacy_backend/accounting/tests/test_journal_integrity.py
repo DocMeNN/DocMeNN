@@ -1,4 +1,14 @@
 # accounting/tests/test_journal_integrity.py
+"""
+PATH: accounting/tests/test_journal_integrity.py
+
+JOURNAL INTEGRITY TESTS
+
+Purpose:
+- Guard the accounting engine invariants:
+  - balanced postings produce balanced ledger entries
+  - unbalanced postings are rejected
+"""
 
 from __future__ import annotations
 
@@ -93,9 +103,7 @@ def _create_active_chart():
     for fname, field in fields.items():
         if fname in payload:
             continue
-        if getattr(field, "primary_key", False) or getattr(
-            field, "auto_created", False
-        ):
+        if getattr(field, "primary_key", False) or getattr(field, "auto_created", False):
             continue
         if hasattr(field, "has_default") and field.has_default():
             continue
@@ -156,9 +164,7 @@ def _ensure_account(chart, code: str, name: str):
     ChartOfAccounts = chart.__class__
     AccountModel, chart_fk = _find_account_model(ChartOfAccounts)
     if AccountModel is None:
-        raise RuntimeError(
-            "Could not locate Account model (code + FK to ChartOfAccounts)."
-        )
+        raise RuntimeError("Could not locate Account model (code + FK to ChartOfAccounts).")
 
     fields = {f.name: f for f in AccountModel._meta.fields}
 
@@ -179,9 +185,7 @@ def _ensure_account(chart, code: str, name: str):
     for fname, field in fields.items():
         if fname in payload:
             continue
-        if getattr(field, "primary_key", False) or getattr(
-            field, "auto_created", False
-        ):
+        if getattr(field, "primary_key", False) or getattr(field, "auto_created", False):
             continue
         if hasattr(field, "has_default") and field.has_default():
             continue
@@ -223,13 +227,14 @@ class JournalEntryServiceTests(TestCase):
         self.assertEqual(lines.count(), 2)
 
         debit_sum = sum(
-            (l.amount for l in lines if l.entry_type == LedgerEntry.DEBIT),
+            (line.amount for line in lines if line.entry_type == LedgerEntry.DEBIT),
             Decimal("0.00"),
         )
         credit_sum = sum(
-            (l.amount for l in lines if l.entry_type == LedgerEntry.CREDIT),
+            (line.amount for line in lines if line.entry_type == LedgerEntry.CREDIT),
             Decimal("0.00"),
         )
+
         self.assertEqual(debit_sum, Decimal("100.00"))
         self.assertEqual(credit_sum, Decimal("100.00"))
 

@@ -1,15 +1,29 @@
-# accounting/serializers/opening_balances.py
+# accounting/api/opening_balances.py
+"""
+PATH: accounting/api/opening_balances.py
+
+OPENING BALANCES API SERIALIZER
+
+API-layer validation only.
+Core rules delegated to domain object.
+"""
+
+from __future__ import annotations
 
 from decimal import Decimal
 
 from rest_framework import serializers
+
+from accounting.opening_balance import OpeningBalanceError, OpeningBalancePayload
 
 
 class OpeningBalanceLineSerializer(serializers.Serializer):
     account_code = serializers.CharField()
     dc = serializers.ChoiceField(choices=[("D", "Debit"), ("C", "Credit")])
     amount = serializers.DecimalField(
-        max_digits=18, decimal_places=2, min_value=Decimal("0.01")
+        max_digits=18,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
     )
 
 
@@ -19,30 +33,27 @@ class OpeningBalancesCreateSerializer(serializers.Serializer):
     lines = OpeningBalanceLineSerializer(many=True)
 
     def validate(self, attrs):
+        business_id = attrs.get("business_id")
+        as_of_date = attrs.get("as_of_date")
         lines = attrs.get("lines") or []
-        if not lines:
-            raise serializers.ValidationError("At least one line is required")
 
-        # Prevent duplicate account codes
-        codes = [l["account_code"].strip() for l in lines]
-        if len(codes) != len(set(codes)):
-            raise serializers.ValidationError(
-                "Duplicate account_code detected in lines"
+        try:
+            payload = OpeningBalancePayload.from_raw(
+                business_id=business_id,
+                as_of_date=as_of_date,
+                raw_lines=lines,
             )
+        except OpeningBalanceError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
-        debit = sum(
-            (l["amount"] for l in lines if l["dc"] == "D"), start=Decimal("0.00")
-        )
-        credit = sum(
-            (l["amount"] for l in lines if l["dc"] == "C"), start=Decimal("0.00")
-        )
-
-        debit = debit.quantize(Decimal("0.01"))
-        credit = credit.quantize(Decimal("0.01"))
-
-        if debit != credit:
-            raise serializers.ValidationError(
-                f"Opening balances must balance. Debits={debit} Credits={credit}"
-            )
+        # Normalize back into serializer-safe dict
+        attrs["lines"] = [
+            {
+                "account_code": line.account_code,
+                "dc": line.dc,
+                "amount": line.amount,
+            }
+            for line in payload.lines
+        ]
 
         return attrs
