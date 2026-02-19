@@ -65,7 +65,9 @@ def build_opening_balance_reference_id(
     if not isinstance(as_of_date, date):
         raise OpeningBalanceError("as_of_date must be a date")
 
-    return f"{str(business_id).strip()}:{str(chart_id).strip()}:{as_of_date.isoformat()}"
+    return (
+        f"{str(business_id).strip()}:{str(chart_id).strip()}:{as_of_date.isoformat()}"
+    )
 
 
 @dataclass(frozen=True)

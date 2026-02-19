@@ -103,7 +103,9 @@ def _create_active_chart():
     for fname, field in fields.items():
         if fname in payload:
             continue
-        if getattr(field, "primary_key", False) or getattr(field, "auto_created", False):
+        if getattr(field, "primary_key", False) or getattr(
+            field, "auto_created", False
+        ):
             continue
         if hasattr(field, "has_default") and field.has_default():
             continue
@@ -164,7 +166,9 @@ def _ensure_account(chart, code: str, name: str):
     ChartOfAccounts = chart.__class__
     AccountModel, chart_fk = _find_account_model(ChartOfAccounts)
     if AccountModel is None:
-        raise RuntimeError("Could not locate Account model (code + FK to ChartOfAccounts).")
+        raise RuntimeError(
+            "Could not locate Account model (code + FK to ChartOfAccounts)."
+        )
 
     fields = {f.name: f for f in AccountModel._meta.fields}
 
@@ -185,7 +189,9 @@ def _ensure_account(chart, code: str, name: str):
     for fname, field in fields.items():
         if fname in payload:
             continue
-        if getattr(field, "primary_key", False) or getattr(field, "auto_created", False):
+        if getattr(field, "primary_key", False) or getattr(
+            field, "auto_created", False
+        ):
             continue
         if hasattr(field, "has_default") and field.has_default():
             continue
