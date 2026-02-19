@@ -1,3 +1,5 @@
+# .github/workflows/ci.yml
+
 name: CI
 
 on:
@@ -41,8 +43,13 @@ jobs:
           pip install -r requirements.txt
           pip install ruff
 
-      - name: Django system checks
-        run: python manage.py check
+      - name: Django system checks (deploy-grade)
+        run: |
+          python manage.py check
+          python manage.py check --deploy
+
+      - name: Ensure no missing migrations
+        run: python manage.py makemigrations --check --dry-run
 
       - name: Lint
         run: ruff check .
