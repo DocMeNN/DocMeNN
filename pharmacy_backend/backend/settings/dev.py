@@ -8,18 +8,23 @@ Safe + convenient defaults.
 
 from __future__ import annotations
 
-from .base import env
+from .base import *  # noqa: F403
+from .base import env  # explicit for Ruff (F405)
 
 DEBUG = True
 
+# Local defaults (still overridable via .env)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 CORS_ALLOWED_ORIGINS = env.list(
-    "CORS_ALLOWED_ORIGINS", default=["http://localhost:5173"]
+    "CORS_ALLOWED_ORIGINS",
+    default=["http://localhost:5173"],
 )
 
 CSRF_TRUSTED_ORIGINS = env.list(
-    "CSRF_TRUSTED_ORIGINS", default=["http://localhost:5173"]
+    "CSRF_TRUSTED_ORIGINS",
+    default=["http://localhost:5173"],
 )
 
+# Dev keeps credentialed CORS as-is for convenience
 CORS_ALLOW_CREDENTIALS = True

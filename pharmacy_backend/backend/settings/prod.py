@@ -19,7 +19,8 @@ from __future__ import annotations
 
 from django.core.exceptions import ImproperlyConfigured
 
-from .base import BASE_DIR, MIDDLEWARE, env  # explicit imports (no star import)
+from .base import *  # noqa: F403
+from .base import BASE_DIR, MIDDLEWARE, env  # explicit for Ruff (F405)
 
 # ----------------------------
 # DEBUG (force off)
@@ -78,7 +79,8 @@ SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
 # HSTS (start modest; can increase later)
 SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=3600)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool(
-    "SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True
+    "SECURE_HSTS_INCLUDE_SUBDOMAINS",
+    default=True,
 )
 SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=False)
 
