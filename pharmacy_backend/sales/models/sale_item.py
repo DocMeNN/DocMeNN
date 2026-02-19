@@ -16,11 +16,12 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
-from django.db import models
 from django.core.exceptions import ValidationError
+from django.db import models
 from django.utils import timezone
 
 from products.models import Product
+
 from .sale import Sale
 
 
@@ -104,9 +105,17 @@ class SaleItem(models.Model):
         creating the sale item line.
         """
         if getattr(self.sale, "status", None) != Sale.STATUS_DRAFT:
-            raise ValidationError("SaleItem records are immutable once sale is not draft")
+            raise ValidationError(
+                "SaleItem records are immutable once sale is not draft"
+            )
 
-        allowed = {"unit_cost", "cost_amount", "gross_profit_amount", "batch_reference", "total_price"}
+        allowed = {
+            "unit_cost",
+            "cost_amount",
+            "gross_profit_amount",
+            "batch_reference",
+            "total_price",
+        }
 
         # Forbid any other edits
         for field in ("sale_id", "product_id", "quantity", "unit_price", "created_at"):
@@ -138,7 +147,9 @@ class SaleItem(models.Model):
 
         # Maintain profit consistency best-effort
         try:
-            self.gross_profit_amount = Decimal(self.total_price) - Decimal(self.cost_amount)
+            self.gross_profit_amount = Decimal(self.total_price) - Decimal(
+                self.cost_amount
+            )
         except Exception:
             pass
 

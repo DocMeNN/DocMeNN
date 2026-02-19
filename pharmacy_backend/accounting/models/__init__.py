@@ -8,11 +8,11 @@ Note:
 - Do NOT import services from models anywhere (models must stay pure).
 """
 
-from accounting.models.chart import ChartOfAccounts
 from accounting.models.account import Account
+from accounting.models.chart import ChartOfAccounts
+from accounting.models.expense import Expense
 from accounting.models.journal import JournalEntry
 from accounting.models.ledger import LedgerEntry
-from accounting.models.expense import Expense
 from accounting.models.period_close import PeriodClose
 
 __all__ = [

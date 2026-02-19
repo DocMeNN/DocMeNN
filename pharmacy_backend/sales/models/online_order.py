@@ -54,12 +54,22 @@ class OnlineOrder(models.Model):
     customer_email = models.EmailField(blank=True, default="")
 
     # Money fields (server authoritative)
-    subtotal_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    subtotal_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    tax_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    discount_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    total_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
 
-    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING_PAYMENT)
+    status = models.CharField(
+        max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING_PAYMENT
+    )
 
     # Link to final Sale (after payment verification)
     sale = models.OneToOneField(

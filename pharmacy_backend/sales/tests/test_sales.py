@@ -1,17 +1,16 @@
 # sales/tests/test_sales.py
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
-from django.contrib.auth import get_user_model
 
+from products.models import Product, StockBatch
 from sales.models.sale import Sale
 from sales.models.sale_item import SaleItem
 from sales.services.sale_lifecycle import (
-    validate_transition,
     InvalidSaleTransitionError,
+    validate_transition,
 )
-
-from products.models import Product, StockBatch
 
 User = get_user_model()
 

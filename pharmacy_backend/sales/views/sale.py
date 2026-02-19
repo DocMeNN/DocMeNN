@@ -1,21 +1,19 @@
 # sales/views/sale.py
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status, serializers
-
 from drf_spectacular.utils import extend_schema
+from rest_framework import serializers, status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from pos.models import Cart
 from sales.serializers import SaleSerializer
 from sales.services.checkout_orchestrator import (
-    checkout_cart,
+    CheckoutError,
     EmptyCartError,
     StockValidationError,
-    CheckoutError,
+    checkout_cart,
 )
-
 from store.models import Store
 
 

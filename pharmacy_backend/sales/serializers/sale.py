@@ -1,14 +1,14 @@
 # sales/serializers/sale.py
 
-from django.db.models import Sum, F, DecimalField
+from django.db.models import DecimalField, F, Sum
 from django.db.models.expressions import ExpressionWrapper
 from rest_framework import serializers
 
 from sales.models import Sale
-from sales.models.sale_item import SaleItem
 from sales.models.refund_audit import SaleRefundAudit
-from sales.models.sale_payment_allocation import SalePaymentAllocation
+from sales.models.sale_item import SaleItem
 from sales.models.sale_item_refund import SaleItemRefund
+from sales.models.sale_payment_allocation import SalePaymentAllocation
 
 
 class SaleRefundAuditSerializer(serializers.ModelSerializer):

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from django.db import models, transaction
 from django.core.exceptions import ValidationError
+from django.db import models, transaction
 
 
 class ChartOfAccounts(models.Model):

@@ -18,16 +18,14 @@ Security:
 
 from decimal import Decimal, InvalidOperation
 
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.generics import GenericAPIView
-
-from drf_spectacular.utils import extend_schema
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from accounting.api.serializers.close_period import ClosePeriodSerializer
-from accounting.services.period_close_service import close_period, PeriodCloseError
-
+from accounting.services.period_close_service import PeriodCloseError, close_period
 
 # Django auto permission on PeriodClose model
 PERIOD_CLOSE_PERMISSION = "accounting.add_periodclose"
@@ -67,7 +65,9 @@ class ClosePeriodView(GenericAPIView):
             result = close_period(
                 start_date=data["start_date"],
                 end_date=data["end_date"],
-                retained_earnings_account_code=data.get("retained_earnings_account_code"),
+                retained_earnings_account_code=data.get(
+                    "retained_earnings_account_code"
+                ),
             )
         except PeriodCloseError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

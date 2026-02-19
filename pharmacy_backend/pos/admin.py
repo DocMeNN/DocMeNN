@@ -2,10 +2,10 @@ from django.contrib import admin
 
 from .models import Cart, CartItem
 
-
 # =====================================================
 # CART ITEM INLINE (READ-ONLY)
 # =====================================================
+
 
 class CartItemInline(admin.TabularInline):
     model = CartItem
@@ -26,6 +26,7 @@ class CartItemInline(admin.TabularInline):
 # =====================================================
 # CART ADMIN
 # =====================================================
+
 
 @admin.register(Cart)
 class CartAdmin(admin.ModelAdmin):
@@ -57,6 +58,7 @@ class CartAdmin(admin.ModelAdmin):
 # =====================================================
 # CART ITEM ADMIN (FULLY IMMUTABLE)
 # =====================================================
+
 
 @admin.register(CartItem)
 class CartItemAdmin(admin.ModelAdmin):

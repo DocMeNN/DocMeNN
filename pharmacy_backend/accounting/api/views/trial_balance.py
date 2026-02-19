@@ -14,13 +14,12 @@ from __future__ import annotations
 from datetime import datetime, time
 
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime, parse_date
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from django.utils.dateparse import parse_date, parse_datetime
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
-
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from accounting.models.chart import ChartOfAccounts
 from accounting.services.account_resolver import get_active_chart
@@ -87,7 +86,10 @@ class TrialBalanceView(APIView):
 
             # ✅ Chart isolation: prevent cross-chart leakage unless explicitly allowed
             if requested_chart_id != active_chart.id:
-                if not (request.user.is_superuser or request.user.has_perm("accounting.view_chartofaccounts")):
+                if not (
+                    request.user.is_superuser
+                    or request.user.has_perm("accounting.view_chartofaccounts")
+                ):
                     return Response(
                         {"detail": "You are not allowed to view this chart."},
                         status=status.HTTP_403_FORBIDDEN,
@@ -133,7 +135,11 @@ class TrialBalanceView(APIView):
         service = TrialBalanceService()
         data = service.generate(chart=chart, as_of=as_of)
 
-        data["chart"] = {"id": chart.id, "name": chart.name, "is_active": chart.is_active}
+        data["chart"] = {
+            "id": chart.id,
+            "name": chart.name,
+            "is_active": chart.is_active,
+        }
         data["as_of_date"] = as_of_date_param or None
 
         return Response(data, status=status.HTTP_200_OK)

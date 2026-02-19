@@ -11,14 +11,14 @@ Contract:
 - Read-only: no mutations, no postings.
 """
 
-from decimal import Decimal, ROUND_HALF_UP
 from datetime import date
-from django.db.models import Sum, Q
+from decimal import ROUND_HALF_UP, Decimal
+
+from django.db.models import Q, Sum
 
 from accounting.models.account import Account
 from accounting.models.ledger import LedgerEntry
 from accounting.services.exceptions import AccountingServiceError
-
 
 TWOPLACES = Decimal("0.01")
 
@@ -84,8 +84,9 @@ def get_accounting_overview_kpis(
     )
 
     accounts = list(
-        Account.objects.filter(is_active=True, account_type__in=relevant_types)
-        .only("id", "account_type")
+        Account.objects.filter(is_active=True, account_type__in=relevant_types).only(
+            "id", "account_type"
+        )
     )
     account_type_by_id = {a.id: a.account_type for a in accounts}
     account_ids = list(account_type_by_id.keys())
@@ -151,24 +152,22 @@ def get_accounting_overview_kpis(
     if end_date:
         pl_filter &= Q(created_at__lte=end_date)
 
-    income_totals = (
-        LedgerEntry.objects.filter(pl_filter, account__account_type=Account.REVENUE)
-        .aggregate(
-            credits=Sum("amount", filter=Q(entry_type=LedgerEntry.CREDIT)),
-            debits=Sum("amount", filter=Q(entry_type=LedgerEntry.DEBIT)),
-        )
+    income_totals = LedgerEntry.objects.filter(
+        pl_filter, account__account_type=Account.REVENUE
+    ).aggregate(
+        credits=Sum("amount", filter=Q(entry_type=LedgerEntry.CREDIT)),
+        debits=Sum("amount", filter=Q(entry_type=LedgerEntry.DEBIT)),
     )
 
     revenue_period = _q2((income_totals["credits"] or Decimal("0.00"))) - _q2(
         (income_totals["debits"] or Decimal("0.00"))
     )
 
-    expense_totals = (
-        LedgerEntry.objects.filter(pl_filter, account__account_type=Account.EXPENSE)
-        .aggregate(
-            debits=Sum("amount", filter=Q(entry_type=LedgerEntry.DEBIT)),
-            credits=Sum("amount", filter=Q(entry_type=LedgerEntry.CREDIT)),
-        )
+    expense_totals = LedgerEntry.objects.filter(
+        pl_filter, account__account_type=Account.EXPENSE
+    ).aggregate(
+        debits=Sum("amount", filter=Q(entry_type=LedgerEntry.DEBIT)),
+        credits=Sum("amount", filter=Q(entry_type=LedgerEntry.CREDIT)),
     )
 
     expenses_period = _q2((expense_totals["debits"] or Decimal("0.00"))) - _q2(

@@ -3,8 +3,8 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.test import TestCase
 from django.contrib.auth import get_user_model
+from django.test import TestCase
 
 from products.models import Product, StockBatch
 
@@ -32,7 +32,9 @@ class ProductStockTests(TestCase):
 
         # If the model doesn't have username, passing None could break create_user,
         # so we guard it properly:
-        if getattr(self.user, "username", None) in (None, "") and hasattr(User, "username"):
+        if getattr(self.user, "username", None) in (None, "") and hasattr(
+            User, "username"
+        ):
             self.user.username = "stock_admin"
             self.user.save(update_fields=["username"])
 
@@ -73,7 +75,6 @@ class ProductStockTests(TestCase):
 
         # Default reverse relation if related_name isn't explicitly set:
         self.assertEqual(self.product.stock_batches.count(), 2)
-
 
     def test_stock_never_negative(self):
         """System must never allow negative stock values."""

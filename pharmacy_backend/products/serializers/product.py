@@ -10,12 +10,11 @@ Purpose:
   - If store_id provided: use store batches if they exist; otherwise fall back to NULL-store batches (migration support).
 """
 
-from django.db.models import Sum, Q
+from django.db.models import Sum
 from django.utils import timezone
-
 from rest_framework import serializers
 
-from products.models import Product, Category, StockBatch
+from products.models import Category, Product, StockBatch
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -200,7 +199,9 @@ class ProductSerializer(serializers.ModelSerializer):
                         try:
                             item["category"] = Category.objects.get(id=category_id)
                         except Category.DoesNotExist:
-                            raise serializers.ValidationError({"category": "Invalid category ID"})
+                            raise serializers.ValidationError(
+                                {"category": "Invalid category ID"}
+                            )
 
                     products.append(Product(**item))
 

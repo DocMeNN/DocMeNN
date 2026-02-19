@@ -22,28 +22,26 @@ from datetime import datetime, timedelta
 
 from django.db import transaction
 from django.utils import timezone
-
-from rest_framework import viewsets, status
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from permissions.roles import (
-    HasCapability,
-    HasAnyCapability,
-    CAP_INVENTORY_VIEW,
-    CAP_INVENTORY_EDIT,
     CAP_INVENTORY_ADJUST,
+    CAP_INVENTORY_EDIT,
+    CAP_INVENTORY_VIEW,
+    HasAnyCapability,
+    HasCapability,
 )
-
-from products.models import StockBatch, StockMovement, Product
+from products.models import Product, StockBatch, StockMovement
 from products.serializers.stock_batch import StockBatchSerializer
+
+# Existing services (actions)
+from products.services.inventory import adjust_stock, expire_stock, receive_stock
 
 # Canonical purchase-led intake (creates batch + receipt movement)
 from products.services.stock_intake import intake_stock
-
-# Existing services (actions)
-from products.services.inventory import receive_stock, adjust_stock, expire_stock
 
 
 class StockBatchViewSet(viewsets.ModelViewSet):
@@ -90,9 +88,8 @@ class StockBatchViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        qs = (
-            StockBatch.objects.select_related("product", "product__store")
-            .order_by("expiry_date", "created_at")
+        qs = StockBatch.objects.select_related("product", "product__store").order_by(
+            "expiry_date", "created_at"
         )
 
         store_id = (self.request.query_params.get("store_id") or "").strip()
@@ -104,9 +101,9 @@ class StockBatchViewSet(viewsets.ModelViewSet):
         if product_id:
             qs = qs.filter(product_id=product_id)
 
-        include_inactive = (self.request.query_params.get("include_inactive") or "true").strip().lower() in (
-            "1", "true", "yes"
-        )
+        include_inactive = (
+            self.request.query_params.get("include_inactive") or "true"
+        ).strip().lower() in ("1", "true", "yes")
         if not include_inactive:
             qs = qs.filter(is_active=True)
 
@@ -131,17 +128,24 @@ class StockBatchViewSet(viewsets.ModelViewSet):
 
         product_id = v.get("product_id", None)
         if not product_id:
-            return Response({"detail": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         try:
             # Enforce active product only
             product = Product.objects.get(id=product_id, is_active=True)
         except Product.DoesNotExist:
-            return Response({"detail": "Invalid or inactive product id"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Invalid or inactive product id"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Optional explicit store override (frontend can pass store_id)
         # If omitted, intake_stock will resolve from product.store.
-        store_id = (request.data.get("store_id") or "").strip() or getattr(product, "store_id", None)
+        store_id = (request.data.get("store_id") or "").strip() or getattr(
+            product, "store_id", None
+        )
 
         try:
             batch = intake_stock(
@@ -149,7 +153,9 @@ class StockBatchViewSet(viewsets.ModelViewSet):
                 quantity_received=v.get("quantity_received"),
                 unit_cost=v.get("unit_cost"),
                 expiry_date=v.get("expiry_date"),
-                batch_number=v.get("batch_number"),  # may be None; service will generate
+                batch_number=v.get(
+                    "batch_number"
+                ),  # may be None; service will generate
                 user=request.user,
                 store=store_id,
                 update_product_price=False,
@@ -200,8 +206,14 @@ class StockBatchViewSet(viewsets.ModelViewSet):
     # DELETE (admin-only)
     # -------------------------------------------------
     def destroy(self, request, *args, **kwargs):
-        if not request.user.is_authenticated or getattr(request.user, "role", None) != "admin":
-            return Response({"detail": "Only admins can delete stock batches."}, status=status.HTTP_403_FORBIDDEN)
+        if (
+            not request.user.is_authenticated
+            or getattr(request.user, "role", None) != "admin"
+        ):
+            return Response(
+                {"detail": "Only admins can delete stock batches."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         return super().destroy(request, *args, **kwargs)
 
     # -------------------------------------------------
@@ -235,10 +247,16 @@ class StockBatchViewSet(viewsets.ModelViewSet):
         try:
             quantity_delta = int(raw_delta)
         except (TypeError, ValueError):
-            return Response({"detail": "quantity_delta must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "quantity_delta must be an integer"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if quantity_delta == 0:
-            return Response({"detail": "quantity_delta cannot be 0"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "quantity_delta cannot be 0"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             adjust_stock(batch=batch, quantity_delta=quantity_delta, user=request.user)
@@ -266,7 +284,9 @@ class StockBatchViewSet(viewsets.ModelViewSet):
     # -------------------------------------------------
     @action(detail=False, methods=["get"], url_path="movements/report")
     def movement_report(self, request):
-        qs = StockMovement.objects.select_related("product", "batch", "sale", "performed_by")
+        qs = StockMovement.objects.select_related(
+            "product", "batch", "sale", "performed_by"
+        )
 
         product_id = (request.query_params.get("product_id") or "").strip()
         store_id = (request.query_params.get("store_id") or "").strip()
@@ -321,10 +341,14 @@ class StockBatchViewSet(viewsets.ModelViewSet):
                     "movement_type": m.movement_type,
                     "reason": m.reason,
                     "quantity": int(m.quantity or 0),
-                    "unit_cost_snapshot": str(getattr(m, "unit_cost_snapshot", "") or ""),
+                    "unit_cost_snapshot": str(
+                        getattr(m, "unit_cost_snapshot", "") or ""
+                    ),
                     "total_cost": str(getattr(m, "total_cost", "") or ""),
                     "sale_id": str(m.sale_id) if m.sale_id else None,
-                    "performed_by": str(m.performed_by_id) if m.performed_by_id else None,
+                    "performed_by": str(m.performed_by_id)
+                    if m.performed_by_id
+                    else None,
                 }
             )
 
@@ -341,7 +365,9 @@ class StockBatchViewSet(viewsets.ModelViewSet):
             if days < 0:
                 raise ValueError
         except ValueError:
-            return Response({"detail": "days must be a non-negative integer"}, status=400)
+            return Response(
+                {"detail": "days must be a non-negative integer"}, status=400
+            )
 
         today = timezone.localdate()
         cutoff = today + timedelta(days=days)

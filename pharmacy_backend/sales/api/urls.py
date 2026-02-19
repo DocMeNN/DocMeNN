@@ -29,18 +29,17 @@ NOTE:
   and must NOT be included here.
 """
 
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-
-from sales.api.viewsets.sale import SaleViewSet
-from sales.views.sale import CheckoutSaleView
 
 # ✅ FIX: import from sales.api.pos_reports (no sales.api.views package needed)
 from sales.api.pos_reports import (
-    DailySalesReportView,
     CashReconciliationReportView,
+    DailySalesReportView,
     ZReportView,
 )
+from sales.api.viewsets.sale import SaleViewSet
+from sales.views.sale import CheckoutSaleView
 
 router = DefaultRouter()
 
@@ -53,12 +52,14 @@ router.register(r"", SaleViewSet, basename="sales-legacy-root")
 urlpatterns = [
     # ✅ IMPORTANT: put explicit routes BEFORE router URLs
     path("checkout/", CheckoutSaleView.as_view(), name="sales-checkout"),
-
     # ✅ POS Reports (Admin-only)
     path("reports/daily/", DailySalesReportView.as_view(), name="sales-reports-daily"),
-    path("reports/cash-recon/", CashReconciliationReportView.as_view(), name="sales-reports-cash-recon"),
+    path(
+        "reports/cash-recon/",
+        CashReconciliationReportView.as_view(),
+        name="sales-reports-cash-recon",
+    ),
     path("reports/z-report/", ZReportView.as_view(), name="sales-reports-z-report"),
-
     # ✅ Router endpoints
     path("", include(router.urls)),
 ]

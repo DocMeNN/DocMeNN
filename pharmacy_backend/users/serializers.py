@@ -1,6 +1,6 @@
-from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from rest_framework import serializers
 
 User = get_user_model()
 
@@ -46,6 +46,7 @@ class LoginSerializer(serializers.Serializer):
     Input validation only.
     Authentication is handled in the view.
     """
+
     email = serializers.EmailField()
     password = serializers.CharField(
         write_only=True,
@@ -58,6 +59,7 @@ class UserSerializer(serializers.ModelSerializer):
     """
     Safe user representation for frontend consumption.
     """
+
     class Meta:
         model = User
         fields = [

@@ -101,7 +101,9 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if not options.get("i_am_sure"):
             self.stdout.write(self.style.ERROR("Refusing to run without --i-am-sure"))
-            self.stdout.write("Example: python manage.py reset_test_data --i-am-sure --include-products")
+            self.stdout.write(
+                "Example: python manage.py reset_test_data --i-am-sure --include-products"
+            )
             return
 
         include_products = bool(options.get("include_products"))
@@ -159,6 +161,7 @@ class Command(BaseCommand):
         # Clear chart resolver cache if present
         try:
             from accounting.services.account_resolver import clear_active_chart_cache
+
             clear_active_chart_cache()
         except Exception:
             pass
@@ -169,4 +172,6 @@ class Command(BaseCommand):
         self.stdout.write("\nNext steps:")
         self.stdout.write("1) Restart backend server (optional but good).")
         self.stdout.write("2) Hard refresh frontend (Ctrl+Shift+R).")
-        self.stdout.write("3) If you use React Query, consider clearing cache / reload app.")
+        self.stdout.write(
+            "3) If you use React Query, consider clearing cache / reload app."
+        )

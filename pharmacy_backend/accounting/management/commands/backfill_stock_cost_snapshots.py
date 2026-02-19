@@ -73,13 +73,14 @@ class Command(BaseCommand):
         if reasons_raw:
             reasons = [r.strip().upper() for r in reasons_raw.split(",") if r.strip()]
 
-        self.stdout.write("Backfilling StockMovement.unit_cost_snapshot from StockBatch.unit_cost...")
+        self.stdout.write(
+            "Backfilling StockMovement.unit_cost_snapshot from StockBatch.unit_cost..."
+        )
         if dry_run:
             self.stdout.write("DRY RUN: no database changes will be saved.\n")
 
         qs = (
-            StockMovement.objects
-            .select_related("batch", "product")
+            StockMovement.objects.select_related("batch", "product")
             .filter(unit_cost_snapshot__isnull=True)
             .order_by("created_at")
         )
@@ -127,10 +128,17 @@ class Command(BaseCommand):
                             "batch_id": bid,
                             "batch_number": getattr(batch, "batch_number", ""),
                             "product_id": str(getattr(batch, "product_id", "")),
-                            "product_name": getattr(getattr(mv, "product", None), "name", "") or "",
-                            "store_id": str(getattr(batch, "store_id", "")) if getattr(batch, "store_id", None) else "",
+                            "product_name": getattr(
+                                getattr(mv, "product", None), "name", ""
+                            )
+                            or "",
+                            "store_id": str(getattr(batch, "store_id", ""))
+                            if getattr(batch, "store_id", None)
+                            else "",
                             "expiry_date": str(getattr(batch, "expiry_date", "") or ""),
-                            "quantity_received": int(getattr(batch, "quantity_received", 0) or 0),
+                            "quantity_received": int(
+                                getattr(batch, "quantity_received", 0) or 0
+                            ),
                             "unit_cost": str(getattr(batch, "unit_cost", "") or ""),
                         }
                 continue
@@ -152,7 +160,9 @@ class Command(BaseCommand):
         self.stdout.write(f"Skipped (cost missing/bad): {skipped_missing_cost}")
 
         if report_missing:
-            self.stdout.write("\n--- Missing/Invalid Batch Costs (distinct batches) ---")
+            self.stdout.write(
+                "\n--- Missing/Invalid Batch Costs (distinct batches) ---"
+            )
             items = list(missing_cost_batches.values())[: max(report_limit, 0)]
             if not items:
                 self.stdout.write("None ✅")

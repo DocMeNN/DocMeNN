@@ -29,7 +29,9 @@ class ClosePeriodSerializer(serializers.Serializer):
         end = attrs["end_date"]
 
         if start > end:
-            raise serializers.ValidationError({"end_date": "end_date must be >= start_date"})
+            raise serializers.ValidationError(
+                {"end_date": "end_date must be >= start_date"}
+            )
 
         code = attrs.get("retained_earnings_account_code")
         if code is not None and str(code).strip() == "":

@@ -11,14 +11,14 @@ Public endpoint:
 - GET /api/store/stores/public/
 """
 
-from rest_framework import viewsets, status
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from permissions.roles import IsStaff  # swap if you want tighter
 from store.models.store import Store
 from store.serializers.store import StoreSerializer
-from permissions.roles import IsStaff  # swap if you want tighter
 
 
 class StoreViewSet(viewsets.ModelViewSet):
@@ -47,4 +47,6 @@ class StoreViewSet(viewsets.ModelViewSet):
         """
         qs = Store.objects.filter(is_active=True).order_by("name")
         data = StoreSerializer(qs, many=True).data
-        return Response({"count": len(data), "results": data}, status=status.HTTP_200_OK)
+        return Response(
+            {"count": len(data), "results": data}, status=status.HTTP_200_OK
+        )

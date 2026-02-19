@@ -23,7 +23,7 @@ Accounting Effect:
 from __future__ import annotations
 
 from datetime import date as date_type, datetime, time
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -32,17 +32,17 @@ from django.utils import timezone
 from accounting.models.account import Account
 from accounting.models.expense import Expense
 from accounting.services.account_resolver import (
-    get_active_chart,
-    get_cash_account,
-    get_bank_account,
     get_accounts_payable_account,
+    get_active_chart,
+    get_bank_account,
+    get_cash_account,
 )
-from accounting.services.posting import post_expense_to_ledger
 from accounting.services.exceptions import (
     AccountResolutionError,
-    JournalEntryCreationError,
     IdempotencyError,
+    JournalEntryCreationError,
 )
+from accounting.services.posting import post_expense_to_ledger
 
 TWOPLACES = Decimal("0.01")
 EXPENSE_POST_PERMISSION = "accounting.add_expense"
@@ -93,7 +93,9 @@ def _resolve_account_by_code(*, code: str) -> Account:
         ) from exc
 
 
-def _resolve_payment_account(*, payment_method: str, payable_account_code: str | None) -> Account:
+def _resolve_payment_account(
+    *, payment_method: str, payable_account_code: str | None
+) -> Account:
     method = (payment_method or Expense.PAYMENT_CASH).lower().strip()
 
     if method == Expense.PAYMENT_CASH:
@@ -104,14 +106,22 @@ def _resolve_payment_account(*, payment_method: str, payable_account_code: str |
 
     if method == Expense.PAYMENT_CREDIT:
         code = (payable_account_code or "").strip()
-        return _resolve_account_by_code(code=code) if code else get_accounts_payable_account()
+        return (
+            _resolve_account_by_code(code=code)
+            if code
+            else get_accounts_payable_account()
+        )
 
-    raise ExpensePostingError("Invalid payment_method. Use 'cash', 'bank', or 'credit'.")
+    raise ExpensePostingError(
+        "Invalid payment_method. Use 'cash', 'bank', or 'credit'."
+    )
 
 
 def _ensure_same_chart(*, expense_account: Account, payment_account: Account) -> None:
     if expense_account.chart_id != payment_account.chart_id:
-        raise ExpensePostingError("expense_account and payment_account must belong to the same active chart.")
+        raise ExpensePostingError(
+            "expense_account and payment_account must belong to the same active chart."
+        )
 
 
 def _assert_can_post_expense(*, user) -> None:

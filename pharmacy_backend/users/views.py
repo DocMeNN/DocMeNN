@@ -32,6 +32,7 @@ class RegisterAnonThrottle(AnonRateThrottle):
     Anonymous registration throttling.
     Uses REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['anon'].
     """
+
     scope = "anon"
 
 
@@ -40,6 +41,7 @@ class LoginAnonThrottle(AnonRateThrottle):
     Anonymous login throttling.
     Uses REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['anon'].
     """
+
     scope = "anon"
 
 
@@ -48,6 +50,7 @@ class MeUserThrottle(UserRateThrottle):
     Authenticated user throttling for /me/.
     Uses REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['user'].
     """
+
     scope = "user"
 
 

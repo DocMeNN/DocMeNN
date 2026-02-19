@@ -13,20 +13,18 @@ Key rule alignment:
 
 from datetime import timedelta
 
-from django.db.models import Sum, Q, F, Case, When, IntegerField
+from django.db.models import Case, F, IntegerField, Q, Sum, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
-
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.response import Response
-
 from drf_spectacular.utils import (
-    extend_schema,
     OpenApiParameter,
     OpenApiResponse,
+    extend_schema,
 )
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
 
 from permissions.roles import IsPharmacistOrAdmin
 from products.models import Product, StockBatch
@@ -82,16 +80,15 @@ class ProductViewSet(viewsets.ModelViewSet):
 
         # If StockBatch doesn't have store FK, we can only rely on product.store scoping.
         if store_id and not has_batch_store_fk:
-            base_filter = Q(stock_batches__is_active=True) & Q(stock_batches__expiry_date__gte=today)
-            return (
-                qs.annotate(
-                    total_stock=Coalesce(
-                        Sum("stock_batches__quantity_remaining", filter=base_filter),
-                        0,
-                    )
-                )
-                .order_by("-created_at")
+            base_filter = Q(stock_batches__is_active=True) & Q(
+                stock_batches__expiry_date__gte=today
             )
+            return qs.annotate(
+                total_stock=Coalesce(
+                    Sum("stock_batches__quantity_remaining", filter=base_filter),
+                    0,
+                )
+            ).order_by("-created_at")
 
         # ---------------------------------------------------------
         # Store-aware + NULL-store fallback (matches checkout logic)
@@ -148,16 +145,15 @@ class ProductViewSet(viewsets.ModelViewSet):
             )
 
         # No store_id supplied => global totals across all batches
-        base_filter = Q(stock_batches__is_active=True) & Q(stock_batches__expiry_date__gte=today)
-        return (
-            qs.annotate(
-                total_stock=Coalesce(
-                    Sum("stock_batches__quantity_remaining", filter=base_filter),
-                    0,
-                )
-            )
-            .order_by("-created_at")
+        base_filter = Q(stock_batches__is_active=True) & Q(
+            stock_batches__expiry_date__gte=today
         )
+        return qs.annotate(
+            total_stock=Coalesce(
+                Sum("stock_batches__quantity_remaining", filter=base_filter),
+                0,
+            )
+        ).order_by("-created_at")
 
     # -----------------------------
     # Public Online Store (AllowAny)
@@ -181,7 +177,10 @@ class ProductViewSet(viewsets.ModelViewSet):
             ),
         ],
         responses={
-            200: OpenApiResponse(response=ProductSerializer(many=True), description="List of active products"),
+            200: OpenApiResponse(
+                response=ProductSerializer(many=True),
+                description="List of active products",
+            ),
             400: OpenApiResponse(description="Missing or invalid store_id"),
         },
         description="Public storefront browsing (AllowAny). Requires store_id for correctness.",
@@ -216,19 +215,22 @@ class ProductViewSet(viewsets.ModelViewSet):
 
         if q:
             qs = qs.filter(
-                Q(name__icontains=q)
-                | Q(sku__icontains=q)
-                | Q(barcode__icontains=q)
+                Q(name__icontains=q) | Q(sku__icontains=q) | Q(barcode__icontains=q)
             )
 
         data = self.get_serializer(qs, many=True).data
-        return Response({"count": len(data), "results": data}, status=status.HTTP_200_OK)
+        return Response(
+            {"count": len(data), "results": data}, status=status.HTTP_200_OK
+        )
 
     # -----------------------------
     # Admin-only delete (safe)
     # -----------------------------
     def destroy(self, request, *args, **kwargs):
-        if not request.user.is_authenticated or getattr(request.user, "role", None) != "admin":
+        if (
+            not request.user.is_authenticated
+            or getattr(request.user, "role", None) != "admin"
+        ):
             return Response(
                 {"detail": "Only admins can delete products."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -250,7 +252,9 @@ class ProductViewSet(viewsets.ModelViewSet):
         """
         qs = self.get_queryset()
 
-        include_inactive = (request.query_params.get("include_inactive") or "").strip().lower() in (
+        include_inactive = (
+            request.query_params.get("include_inactive") or ""
+        ).strip().lower() in (
             "1",
             "true",
             "yes",
@@ -266,7 +270,9 @@ class ProductViewSet(viewsets.ModelViewSet):
                 if threshold < 0:
                     raise ValueError
             except ValueError:
-                return Response({"detail": "threshold must be a non-negative integer"}, status=400)
+                return Response(
+                    {"detail": "threshold must be a non-negative integer"}, status=400
+                )
 
             qs = qs.filter(total_stock__lte=threshold)
         else:
@@ -291,7 +297,9 @@ class ProductViewSet(viewsets.ModelViewSet):
             if days < 0:
                 raise ValueError
         except ValueError:
-            return Response({"detail": "days must be a non-negative integer"}, status=400)
+            return Response(
+                {"detail": "days must be a non-negative integer"}, status=400
+            )
 
         today = timezone.localdate()
         cutoff = today + timedelta(days=days)

@@ -1,7 +1,7 @@
 # batches/models/stock_movement.py
 
-from django.db import models
 from django.core.exceptions import ValidationError
+from django.db import models
 
 
 class StockMovement(models.Model):
@@ -28,15 +28,10 @@ class StockMovement(models.Model):
     ]
 
     batch = models.ForeignKey(
-        "batches.Batch",
-        on_delete=models.CASCADE,
-        related_name="movements"
+        "batches.Batch", on_delete=models.CASCADE, related_name="movements"
     )
 
-    movement_type = models.CharField(
-        max_length=3,
-        choices=MOVEMENT_TYPE_CHOICES
-    )
+    movement_type = models.CharField(max_length=3, choices=MOVEMENT_TYPE_CHOICES)
 
     quantity = models.PositiveIntegerField()
     reason = models.CharField(max_length=255)

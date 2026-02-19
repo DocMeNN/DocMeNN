@@ -14,13 +14,12 @@ Phase 5 Hardening:
   (or they have explicit permission to view charts).
 """
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-
-from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from accounting.models.chart import ChartOfAccounts
 from accounting.services.account_resolver import get_active_chart
@@ -66,10 +65,16 @@ class BalanceSheetView(APIView):
             try:
                 requested_chart_id = int(chart_id)
             except (ValueError, TypeError):
-                return Response({"detail": "chart_id must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": "chart_id must be an integer"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             if requested_chart_id != active_chart.id:
-                if not (request.user.is_superuser or request.user.has_perm("accounting.view_chartofaccounts")):
+                if not (
+                    request.user.is_superuser
+                    or request.user.has_perm("accounting.view_chartofaccounts")
+                ):
                     return Response(
                         {"detail": "You are not allowed to view this chart."},
                         status=status.HTTP_403_FORBIDDEN,
@@ -78,7 +83,10 @@ class BalanceSheetView(APIView):
             try:
                 chart = ChartOfAccounts.objects.get(id=requested_chart_id)
             except ChartOfAccounts.DoesNotExist:
-                return Response({"detail": "Chart not found for given chart_id"}, status=status.HTTP_404_NOT_FOUND)
+                return Response(
+                    {"detail": "Chart not found for given chart_id"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
         else:
             chart = active_chart
 
@@ -87,7 +95,11 @@ class BalanceSheetView(APIView):
         except AccountingServiceError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        balance_sheet["chart"] = {"id": chart.id, "name": chart.name, "is_active": chart.is_active}
+        balance_sheet["chart"] = {
+            "id": chart.id,
+            "name": chart.name,
+            "is_active": chart.is_active,
+        }
         balance_sheet["as_of_date"] = as_of_date or None
 
         return Response(balance_sheet, status=status.HTTP_200_OK)

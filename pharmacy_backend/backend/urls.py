@@ -25,7 +25,6 @@ from django.db import connections
 from django.db.utils import OperationalError
 from django.urls import include, path
 from django.views.generic import RedirectView
-
 from drf_spectacular.utils import extend_schema
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.decorators import api_view, permission_classes
@@ -113,9 +112,13 @@ def health_check(request):
             cursor.fetchone()
         return Response({"status": "ok", "db": "ok"})
     except OperationalError as e:
-        return Response({"status": "degraded", "db": "down", "error": str(e)}, status=503)
+        return Response(
+            {"status": "degraded", "db": "down", "error": str(e)}, status=503
+        )
     except Exception as e:
-        return Response({"status": "degraded", "db": "unknown", "error": str(e)}, status=503)
+        return Response(
+            {"status": "degraded", "db": "unknown", "error": str(e)}, status=503
+        )
 
 
 # ------------------ ADMIN PATH (HARDENED) ------------------

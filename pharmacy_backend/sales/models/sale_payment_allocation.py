@@ -38,7 +38,9 @@ class SalePaymentAllocation(models.Model):
     ]
 
     method = models.CharField(max_length=32, choices=METHOD_CHOICES)
-    amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
 
     reference = models.CharField(max_length=128, blank=True, default="")
     note = models.CharField(max_length=255, blank=True, default="")

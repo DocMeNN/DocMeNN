@@ -16,13 +16,12 @@ HOTSPRINT UPGRADE (PRICING + MARKUP READY):
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
-from django.db import transaction, IntegrityError
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 
 from products.models import StockBatch, StockMovement
-
 
 TWOPLACES = Decimal("0.01")
 
@@ -34,15 +33,25 @@ def _money(v) -> Decimal:
 
 
 def _resolve_store_id(*, product, store=None):
-    store_id = getattr(store, "id", store) if store is not None else getattr(product, "store_id", None)
+    store_id = (
+        getattr(store, "id", store)
+        if store is not None
+        else getattr(product, "store_id", None)
+    )
     if not store_id:
-        raise ValidationError("store is required (either pass store or ensure product.store is set)")
+        raise ValidationError(
+            "store is required (either pass store or ensure product.store is set)"
+        )
     return store_id
 
 
-def _calc_selling_price(*, unit_cost: Decimal, markup_percent=None, markup_amount=None) -> Decimal | None:
+def _calc_selling_price(
+    *, unit_cost: Decimal, markup_percent=None, markup_amount=None
+) -> Decimal | None:
     if markup_percent is not None and markup_amount is not None:
-        raise ValidationError("Provide either markup_percent or markup_amount, not both")
+        raise ValidationError(
+            "Provide either markup_percent or markup_amount, not both"
+        )
 
     if markup_percent is None and markup_amount is None:
         return None
@@ -51,7 +60,9 @@ def _calc_selling_price(*, unit_cost: Decimal, markup_percent=None, markup_amoun
         mp = _money(markup_percent)
         if mp < Decimal("0.00"):
             raise ValidationError("markup_percent must be >= 0")
-        return (unit_cost * (Decimal("1.00") + (mp / Decimal("100.00")))).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+        return (unit_cost * (Decimal("1.00") + (mp / Decimal("100.00")))).quantize(
+            TWOPLACES, rounding=ROUND_HALF_UP
+        )
 
     ma = _money(markup_amount)
     if ma < Decimal("0.00"):
@@ -99,7 +110,9 @@ def intake_stock(
     )
 
     if update_product_price and selling_price is None:
-        raise ValidationError("update_product_price=True requires markup_percent or markup_amount")
+        raise ValidationError(
+            "update_product_price=True requires markup_percent or markup_amount"
+        )
 
     try:
         batch = StockBatch.objects.create(

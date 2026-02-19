@@ -9,9 +9,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from accounting.models.journal import JournalEntry
-from accounting.services.posting import post_sale_to_ledger, post_refund_to_ledger
-from sales.models.sale import Sale
+from accounting.services.posting import post_refund_to_ledger, post_sale_to_ledger
 from sales.models.refund_audit import SaleRefundAudit
+from sales.models.sale import Sale
 
 
 def _parse_date(s: str | None):
@@ -34,7 +34,9 @@ def _bounds(date_from, date_to):
         return None, None
 
     start = timezone.make_aware(datetime.combine(date_from, datetime.min.time()), tz)
-    end = timezone.make_aware(datetime.combine(date_to, datetime.min.time()), tz) + timezone.timedelta(days=1)
+    end = timezone.make_aware(
+        datetime.combine(date_to, datetime.min.time()), tz
+    ) + timezone.timedelta(days=1)
     return start, end
 
 
@@ -50,9 +52,15 @@ class Command(BaseCommand):
     help = "Create missing POS_SALE / POS_REFUND journal entries for existing historical sales/refunds."
 
     def add_arguments(self, parser):
-        parser.add_argument("--from", dest="date_from", help="Start date YYYY-MM-DD (optional)")
-        parser.add_argument("--to", dest="date_to", help="End date YYYY-MM-DD (optional)")
-        parser.add_argument("--dry-run", action="store_true", help="Show actions without writing to DB")
+        parser.add_argument(
+            "--from", dest="date_from", help="Start date YYYY-MM-DD (optional)"
+        )
+        parser.add_argument(
+            "--to", dest="date_to", help="End date YYYY-MM-DD (optional)"
+        )
+        parser.add_argument(
+            "--dry-run", action="store_true", help="Show actions without writing to DB"
+        )
         parser.add_argument(
             "--force",
             action="store_true",
@@ -79,10 +87,7 @@ class Command(BaseCommand):
         # -----------------------------
         sales_qs = Sale.objects.filter(status=Sale.STATUS_COMPLETED)
 
-        refunds_qs = (
-            SaleRefundAudit.objects
-            .select_related("sale")
-        )
+        refunds_qs = SaleRefundAudit.objects.select_related("sale")
 
         if start and end:
             sales_qs = sales_qs.filter(completed_at__gte=start, completed_at__lt=end)
@@ -104,9 +109,19 @@ class Command(BaseCommand):
         self.stdout.write(f"DEBUG: Refund audits found:   {total_refunds}")
 
         if total_sales == 0:
-            distinct_statuses = list(Sale.objects.values_list("status", flat=True).distinct())
-            self.stdout.write(self.style.WARNING(f"DEBUG: Distinct Sale.status values in DB: {distinct_statuses}"))
-            self.stdout.write(self.style.WARNING(f"DEBUG: Sale.STATUS_COMPLETED constant: {Sale.STATUS_COMPLETED!r}"))
+            distinct_statuses = list(
+                Sale.objects.values_list("status", flat=True).distinct()
+            )
+            self.stdout.write(
+                self.style.WARNING(
+                    f"DEBUG: Distinct Sale.status values in DB: {distinct_statuses}"
+                )
+            )
+            self.stdout.write(
+                self.style.WARNING(
+                    f"DEBUG: Sale.STATUS_COMPLETED constant: {Sale.STATUS_COMPLETED!r}"
+                )
+            )
 
         if dry_run:
             self.stdout.write("DRY RUN: no database changes will be saved.\n")
@@ -145,7 +160,9 @@ class Command(BaseCommand):
             inv = (getattr(sale, "invoice_no", None) or "").strip()
             if inv and not force:
                 expected_prefix = _sale_desc_prefix(inv)
-                if JournalEntry.objects.filter(description__startswith=expected_prefix).exists():
+                if JournalEntry.objects.filter(
+                    description__startswith=expected_prefix
+                ).exists():
                     skipped_sales += 1
                     continue
 
@@ -189,7 +206,9 @@ class Command(BaseCommand):
 
             if inv and not force:
                 expected_prefix = _refund_desc_prefix(inv)
-                if JournalEntry.objects.filter(description__startswith=expected_prefix).exists():
+                if JournalEntry.objects.filter(
+                    description__startswith=expected_prefix
+                ).exists():
                     skipped_refunds += 1
                     continue
 
@@ -209,10 +228,14 @@ class Command(BaseCommand):
 
         self.stdout.write("\n--- Summary ---")
         self.stdout.write(f"Sales posted:    {posted_sales}")
-        self.stdout.write(f"Sales skipped:   {skipped_sales} (existing POS Sale by invoice prefix)")
+        self.stdout.write(
+            f"Sales skipped:   {skipped_sales} (existing POS Sale by invoice prefix)"
+        )
         self.stdout.write(f"Sales failed:    {failed_sales}")
         self.stdout.write(f"Refunds posted:  {posted_refunds}")
-        self.stdout.write(f"Refunds skipped: {skipped_refunds} (existing POS Refund by invoice prefix)")
+        self.stdout.write(
+            f"Refunds skipped: {skipped_refunds} (existing POS Refund by invoice prefix)"
+        )
         self.stdout.write(f"Refunds failed:  {failed_refunds}")
 
         if errors:

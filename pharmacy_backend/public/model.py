@@ -103,7 +103,9 @@ class OnlineOrder(models.Model):
     items_snapshot = models.JSONField(default=list, blank=True)
 
     # Paystack reference (unique per initiated payment)
-    provider_reference = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    provider_reference = models.CharField(
+        max_length=128, blank=True, default="", db_index=True
+    )
 
     # When provider confirms payment
     paid_at = models.DateTimeField(null=True, blank=True)
@@ -145,7 +147,9 @@ class OnlineOrder(models.Model):
 
     def mark_fulfilled(self):
         if self.status != self.STATUS_PAID:
-            raise ValueError("Order can only be fulfilled after payment is confirmed (PAID).")
+            raise ValueError(
+                "Order can only be fulfilled after payment is confirmed (PAID)."
+            )
         self.status = self.STATUS_FULFILLED
 
     def cancel(self):

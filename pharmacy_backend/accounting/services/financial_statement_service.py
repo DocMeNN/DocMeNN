@@ -22,14 +22,12 @@ from decimal import Decimal
 from accounting.models.account import Account
 from accounting.services.balance_service import (
     get_trial_balance,
-    get_totals_by_account_type,
-    get_profit_and_loss,
 )
-
 
 # ============================================================
 # DOMAIN ERRORS
 # ============================================================
+
 
 class FinancialStatementError(Exception):
     """Raised when financial statements are structurally invalid"""
@@ -38,6 +36,7 @@ class FinancialStatementError(Exception):
 # ============================================================
 # BALANCE SHEET
 # ============================================================
+
 
 def get_balance_sheet(chart) -> dict:
     """
@@ -116,6 +115,7 @@ def get_balance_sheet(chart) -> dict:
 # PROFIT & LOSS (INCOME STATEMENT)
 # ============================================================
 
+
 def get_income_statement(chart) -> dict:
     """
     Produce an Income Statement (Profit & Loss).
@@ -173,6 +173,7 @@ def get_income_statement(chart) -> dict:
 # ============================================================
 # VALIDATION / HEALTH CHECK
 # ============================================================
+
 
 def validate_financials(chart) -> None:
     """

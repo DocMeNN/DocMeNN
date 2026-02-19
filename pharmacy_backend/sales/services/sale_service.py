@@ -5,11 +5,11 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
-from sales.models import Sale, SaleItem
 from products.services.stock_fifo import (
-    deduct_stock_fifo,
     InsufficientStockError,
+    deduct_stock_fifo,
 )
+from sales.models import Sale, SaleItem
 
 
 class EmptyCartError(Exception):
@@ -45,11 +45,7 @@ def create_sale_from_cart(
     if not cart.items.exists():
         raise EmptyCartError("Cart is empty")
 
-    cart_items = (
-        cart.items
-        .select_related("product")
-        .select_for_update()
-    )
+    cart_items = cart.items.select_related("product").select_for_update()
 
     # --------------------------------------------------
     # CREATE SALE (DRAFT STATE)
@@ -88,11 +84,7 @@ def create_sale_from_cart(
         raise StockValidationError(str(exc))
 
     sale.subtotal_amount = subtotal
-    sale.total_amount = (
-        subtotal
-        + sale.tax_amount
-        - sale.discount_amount
-    )
+    sale.total_amount = subtotal + sale.tax_amount - sale.discount_amount
     sale.completed_at = timezone.now()
 
     sale.save(

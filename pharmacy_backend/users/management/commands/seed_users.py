@@ -10,12 +10,12 @@ from django.db import transaction
 
 from permissions.roles import (
     BUSINESS_PHARMACY,
-    BUSINESS_SUPERMARKET,
     BUSINESS_RETAIL,
+    BUSINESS_SUPERMARKET,
     BUSINESS_TYPES,
     ROLE_ADMIN,
-    ROLE_MANAGER,
     ROLE_CASHIER,
+    ROLE_MANAGER,
     ROLE_PHARMACIST,
     ROLE_RECEPTION,
 )
@@ -52,17 +52,37 @@ def _user_specs_for_business(business_type: str) -> list[SeedUserSpec]:
     if business_type == BUSINESS_PHARMACY:
         return [
             SeedUserSpec("Admin", ROLE_ADMIN, "admin@example.com", "System", "Admin"),
-            SeedUserSpec("Manager", ROLE_MANAGER, "manager@example.com", "Store", "Manager"),
-            SeedUserSpec("Pharmacist", ROLE_PHARMACIST, "pharmacist@example.com", "Lead", "Pharmacist"),
-            SeedUserSpec("Cashier", ROLE_CASHIER, "cashier@example.com", "Front", "Desk"),
-            SeedUserSpec("Reception", ROLE_RECEPTION, "reception@example.com", "Reception", "Staff"),
+            SeedUserSpec(
+                "Manager", ROLE_MANAGER, "manager@example.com", "Store", "Manager"
+            ),
+            SeedUserSpec(
+                "Pharmacist",
+                ROLE_PHARMACIST,
+                "pharmacist@example.com",
+                "Lead",
+                "Pharmacist",
+            ),
+            SeedUserSpec(
+                "Cashier", ROLE_CASHIER, "cashier@example.com", "Front", "Desk"
+            ),
+            SeedUserSpec(
+                "Reception",
+                ROLE_RECEPTION,
+                "reception@example.com",
+                "Reception",
+                "Staff",
+            ),
         ]
 
     if business_type in {BUSINESS_SUPERMARKET, BUSINESS_RETAIL}:
         return [
             SeedUserSpec("Admin", ROLE_ADMIN, "admin@example.com", "System", "Admin"),
-            SeedUserSpec("Manager", ROLE_MANAGER, "manager@example.com", "Store", "Manager"),
-            SeedUserSpec("Cashier", ROLE_CASHIER, "cashier@example.com", "Front", "Desk"),
+            SeedUserSpec(
+                "Manager", ROLE_MANAGER, "manager@example.com", "Store", "Manager"
+            ),
+            SeedUserSpec(
+                "Cashier", ROLE_CASHIER, "cashier@example.com", "Front", "Desk"
+            ),
         ]
 
     return []
@@ -97,7 +117,9 @@ class Command(BaseCommand):
         force_password = bool(options.get("force_password"))
 
         if business not in BUSINESS_TYPES:
-            raise CommandError(f"Invalid --business '{business}'. Must be one of: {sorted(BUSINESS_TYPES)}")
+            raise CommandError(
+                f"Invalid --business '{business}'. Must be one of: {sorted(BUSINESS_TYPES)}"
+            )
 
         if not password or len(password) < 6:
             raise CommandError("--password must be at least 6 characters.")
@@ -106,7 +128,9 @@ class Command(BaseCommand):
 
         # Sanity: required fields
         if not _has_field(User, "email"):
-            raise CommandError("Your User model must have an 'email' field for this seed command.")
+            raise CommandError(
+                "Your User model must have an 'email' field for this seed command."
+            )
 
         specs = _user_specs_for_business(business)
 
@@ -131,7 +155,9 @@ class Command(BaseCommand):
             if _has_field(User, "last_name"):
                 defaults["last_name"] = spec.last_name
 
-            user, created = User.objects.get_or_create(email=spec.email, defaults=defaults)
+            user, created = User.objects.get_or_create(
+                email=spec.email, defaults=defaults
+            )
 
             dirty = False
 
@@ -152,11 +178,19 @@ class Command(BaseCommand):
                 user.is_active = True
                 dirty = True
 
-            if _has_field(User, "first_name") and spec.first_name and getattr(user, "first_name", "") != spec.first_name:
+            if (
+                _has_field(User, "first_name")
+                and spec.first_name
+                and getattr(user, "first_name", "") != spec.first_name
+            ):
                 user.first_name = spec.first_name
                 dirty = True
 
-            if _has_field(User, "last_name") and spec.last_name and getattr(user, "last_name", "") != spec.last_name:
+            if (
+                _has_field(User, "last_name")
+                and spec.last_name
+                and getattr(user, "last_name", "") != spec.last_name
+            ):
                 user.last_name = spec.last_name
                 dirty = True
 
@@ -176,9 +210,13 @@ class Command(BaseCommand):
 
             if created:
                 created_count += 1
-                self.stdout.write(f"✅ created: {spec.label} ({spec.role}) -> {spec.email}")
+                self.stdout.write(
+                    f"✅ created: {spec.label} ({spec.role}) -> {spec.email}"
+                )
             else:
-                self.stdout.write(f"↩︎ exists:  {spec.label} ({spec.role}) -> {spec.email}")
+                self.stdout.write(
+                    f"↩︎ exists:  {spec.label} ({spec.role}) -> {spec.email}"
+                )
 
         self.stdout.write("\n--- Summary ---")
         self.stdout.write(f"Created: {created_count}")
@@ -187,4 +225,6 @@ class Command(BaseCommand):
             self.stdout.write(f"Passwords reset: {pw_reset_count}")
 
         self.stdout.write("\nRun example:")
-        self.stdout.write("  python manage.py seed_users --business supermarket --password Pass1234!")
+        self.stdout.write(
+            "  python manage.py seed_users --business supermarket --password Pass1234!"
+        )

@@ -26,22 +26,21 @@ LEGACY/TEST COMPATIBILITY:
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from sales.models import Sale, SaleItem, SalePaymentAllocation
-from products.models.stock_batch import StockBatch
-from products.services.stock_fifo import deduct_stock_fifo, InsufficientStockError
-
-from accounting.services.posting import post_sale_to_ledger
 from accounting.services.exceptions import (
-    JournalEntryCreationError,
-    IdempotencyError,
     AccountResolutionError,
+    IdempotencyError,
+    JournalEntryCreationError,
 )
+from accounting.services.posting import post_sale_to_ledger
+from products.models.stock_batch import StockBatch
+from products.services.stock_fifo import InsufficientStockError, deduct_stock_fifo
+from sales.models import Sale, SaleItem, SalePaymentAllocation
 
 TWOPLACES = Decimal("0.01")
 
@@ -81,7 +80,11 @@ def _available_stock_for_store(*, product, store_id, today) -> int:
 
     # Single-store mode
     if not store_id:
-        total = base.filter(store__isnull=True).aggregate(total=Sum("quantity_remaining")).get("total")
+        total = (
+            base.filter(store__isnull=True)
+            .aggregate(total=Sum("quantity_remaining"))
+            .get("total")
+        )
         return int(total or 0)
 
     store_qs = base.filter(store_id=store_id)
@@ -112,7 +115,9 @@ def _validate_and_normalize_allocations(allocations) -> list[dict]:
     for idx, a in enumerate(allocations):
         method = str(a.get("method", "")).strip().lower()
         if method not in {"cash", "bank", "pos", "transfer", "credit"}:
-            raise ValueError(f"Invalid payment allocation method at index {idx}: {method}")
+            raise ValueError(
+                f"Invalid payment allocation method at index {idx}: {method}"
+            )
 
         amt = _money(a.get("amount", None))
         if amt <= Decimal("0.00"):
@@ -147,7 +152,9 @@ class AccountingPostingError(CheckoutError):
 
 
 @transaction.atomic
-def checkout_cart(*, user, cart, payment_method: str | None, payment_allocations=None) -> Sale:
+def checkout_cart(
+    *, user, cart, payment_method: str | None, payment_allocations=None
+) -> Sale:
     try:
         cart = cart.__class__.objects.select_for_update().get(pk=cart.pk)
     except Exception:
@@ -186,7 +193,9 @@ def checkout_cart(*, user, cart, payment_method: str | None, payment_allocations
                 f"Invalid quantity for {getattr(item.product, 'name', 'product')}. Quantity must be at least 1."
             )
 
-        available_qty = _available_stock_for_store(product=item.product, store_id=store_id, today=today)
+        available_qty = _available_stock_for_store(
+            product=item.product, store_id=store_id, today=today
+        )
         if available_qty < requested_qty:
             raise StockValidationError(
                 f"Insufficient stock for {item.product.name}. "
@@ -221,7 +230,9 @@ def checkout_cart(*, user, cart, payment_method: str | None, payment_allocations
         sale_create_kwargs["discount_amount"] = cart_discount
 
     if hasattr(Sale, "customer_name") and hasattr(cart, "customer_name"):
-        sale_create_kwargs["customer_name"] = str(getattr(cart, "customer_name", "") or "").strip()
+        sale_create_kwargs["customer_name"] = str(
+            getattr(cart, "customer_name", "") or ""
+        ).strip()
 
     sale = Sale.objects.create(**sale_create_kwargs)
 
@@ -265,9 +276,11 @@ def checkout_cart(*, user, cart, payment_method: str | None, payment_allocations
 
                 # ✅ allow legacy/test cost = 0.00; only forbid negative
                 if mv_unit_cost < Decimal("0.00"):
-                    raise StockValidationError("Invalid unit_cost_snapshot (must be >= 0).")
+                    raise StockValidationError(
+                        "Invalid unit_cost_snapshot (must be >= 0)."
+                    )
 
-                line_cogs += (mv_unit_cost * Decimal(mv_qty))
+                line_cogs += mv_unit_cost * Decimal(mv_qty)
 
             sale_cogs_total += _money(line_cogs)
 
@@ -278,13 +291,17 @@ def checkout_cart(*, user, cart, payment_method: str | None, payment_allocations
 
             avg_unit_cost = Decimal("0.00")
             if qty_int:
-                avg_unit_cost = (line_cogs / Decimal(qty_int)).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+                avg_unit_cost = (line_cogs / Decimal(qty_int)).quantize(
+                    TWOPLACES, rounding=ROUND_HALF_UP
+                )
 
             if _safe_setattr(sale_item, "unit_cost", avg_unit_cost):
                 dirty_fields.append("unit_cost")
             if _safe_setattr(sale_item, "cost_amount", _money(line_cogs)):
                 dirty_fields.append("cost_amount")
-            if _safe_setattr(sale_item, "gross_profit_amount", _money(line_gross_profit)):
+            if _safe_setattr(
+                sale_item, "gross_profit_amount", _money(line_gross_profit)
+            ):
                 dirty_fields.append("gross_profit_amount")
             if _safe_setattr(sale_item, "line_total_amount", _money(line_revenue)):
                 dirty_fields.append("line_total_amount")
@@ -325,12 +342,19 @@ def checkout_cart(*, user, cart, payment_method: str | None, payment_allocations
         sale.discount_amount = discount
         extra_update_fields.append("discount_amount")
 
-    sale.save(update_fields=["subtotal_amount", "total_amount", "completed_at", "status"] + extra_update_fields)
+    sale.save(
+        update_fields=["subtotal_amount", "total_amount", "completed_at", "status"]
+        + extra_update_fields
+    )
 
     if normalized_allocs:
-        alloc_total = _money(sum((a["amount"] for a in normalized_allocs), Decimal("0.00")))
+        alloc_total = _money(
+            sum((a["amount"] for a in normalized_allocs), Decimal("0.00"))
+        )
         if alloc_total != total:
-            raise CheckoutError(f"Split payment mismatch: allocations sum({alloc_total}) != sale total({total}).")
+            raise CheckoutError(
+                f"Split payment mismatch: allocations sum({alloc_total}) != sale total({total})."
+            )
 
         if sale.payment_method != "split":
             sale.payment_method = "split"

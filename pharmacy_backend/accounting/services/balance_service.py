@@ -16,9 +16,9 @@ RULES:
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
-from django.db.models import Sum, Case, When, F
+from django.db.models import Case, F, Sum, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -119,11 +119,12 @@ def get_trial_balance(chart, *, as_of: datetime | None = None) -> list[dict]:
 
     account_ids = [a.id for a in accounts]
 
-    qs = _ledger_qs_for_chart(chart=chart, as_of=as_of).filter(account_id__in=account_ids)
+    qs = _ledger_qs_for_chart(chart=chart, as_of=as_of).filter(
+        account_id__in=account_ids
+    )
 
-    rows = (
-        qs.values("account_id", "entry_type")
-        .annotate(total=Coalesce(Sum("amount"), Decimal("0.00")))
+    rows = qs.values("account_id", "entry_type").annotate(
+        total=Coalesce(Sum("amount"), Decimal("0.00"))
     )
 
     debit_by = {acc_id: Decimal("0.00") for acc_id in account_ids}

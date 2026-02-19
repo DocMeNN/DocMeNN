@@ -26,8 +26,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Iterable, List, Optional, Tuple
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import Iterable, List, Tuple
 
 MONEY_QUANT = Decimal("0.01")
 
@@ -66,7 +66,9 @@ def build_opening_balance_reference_id(
     if not isinstance(as_of_date, date):
         raise OpeningBalanceError("as_of_date must be a date")
 
-    return f"{str(business_id).strip()}:{str(chart_id).strip()}:{as_of_date.isoformat()}"
+    return (
+        f"{str(business_id).strip()}:{str(chart_id).strip()}:{as_of_date.isoformat()}"
+    )
 
 
 @dataclass(frozen=True)
@@ -149,8 +151,12 @@ class OpeningBalancePayload:
         return payload
 
     def totals(self) -> Tuple[Decimal, Decimal]:
-        debit = sum((l.amount for l in self.lines if l.dc == "D"), start=Decimal("0.00"))
-        credit = sum((l.amount for l in self.lines if l.dc == "C"), start=Decimal("0.00"))
+        debit = sum(
+            (l.amount for l in self.lines if l.dc == "D"), start=Decimal("0.00")
+        )
+        credit = sum(
+            (l.amount for l in self.lines if l.dc == "C"), start=Decimal("0.00")
+        )
         debit = debit.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
         credit = credit.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
         return debit, credit
@@ -166,5 +172,7 @@ class OpeningBalancePayload:
         seen = set()
         for l in self.lines:
             if l.account_code in seen:
-                raise OpeningBalanceError(f"Duplicate account_code in lines: {l.account_code}")
+                raise OpeningBalanceError(
+                    f"Duplicate account_code in lines: {l.account_code}"
+                )
             seen.add(l.account_code)

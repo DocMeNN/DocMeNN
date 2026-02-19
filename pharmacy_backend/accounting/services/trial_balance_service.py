@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db.models import Sum
 from django.utils import timezone
 from django.utils.timezone import now
 
-from accounting.models.ledger import LedgerEntry
 from accounting.models.account import Account
+from accounting.models.ledger import LedgerEntry
 from accounting.services.account_resolver import get_active_chart
-
 
 TWOPLACES = Decimal("0.01")
 

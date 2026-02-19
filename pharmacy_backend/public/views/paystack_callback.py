@@ -58,7 +58,9 @@ class PaystackCallbackView(APIView):
             return redirect(_safe_frontend_base() + "/store")
 
         order = attempt.order
-        store_id = getattr(order, "store_id", None) or getattr(getattr(order, "store", None), "id", None)
+        store_id = getattr(order, "store_id", None) or getattr(
+            getattr(order, "store", None), "id", None
+        )
         order_id = getattr(order, "id", None)
 
         if not store_id or not order_id:

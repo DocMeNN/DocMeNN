@@ -31,7 +31,7 @@ Idempotency rule:
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.utils import timezone
@@ -39,20 +39,18 @@ from django.utils import timezone
 from accounting.models.account import Account
 from accounting.models.journal import JournalEntry
 from accounting.services.account_resolver import (
+    get_accounts_payable_account,
     get_active_chart,
     get_inventory_account,
-    get_accounts_payable_account,
 )
 from accounting.services.exceptions import (
     AccountResolutionError,
-    JournalEntryCreationError,
     IdempotencyError,
+    JournalEntryCreationError,
 )
 from accounting.services.posting import post_purchase_receipt_to_ledger
-
 from products.models.stock_batch import StockBatch
 from products.services.inventory import intake_stock
-
 from purchases.models import PurchaseInvoice
 
 
@@ -99,8 +97,14 @@ def _resolve_inventory_and_payable_accounts(
     inv_code = (inventory_account_code or "").strip()
     ap_code = (payable_account_code or "").strip()
 
-    inventory_account = _resolve_account_by_code(code=inv_code) if inv_code else get_inventory_account()
-    payable_account = _resolve_account_by_code(code=ap_code) if ap_code else get_accounts_payable_account()
+    inventory_account = (
+        _resolve_account_by_code(code=inv_code) if inv_code else get_inventory_account()
+    )
+    payable_account = (
+        _resolve_account_by_code(code=ap_code)
+        if ap_code
+        else get_accounts_payable_account()
+    )
 
     return inventory_account, payable_account
 
@@ -122,7 +126,9 @@ def _get_existing_purchase_receipt_journal_entry(*, invoice_id: str) -> JournalE
         ) from exc
 
 
-def _batch_conflict_guard(*, product, batch_number: str, expiry_date, qty: int, unit_cost: Decimal) -> None:
+def _batch_conflict_guard(
+    *, product, batch_number: str, expiry_date, qty: int, unit_cost: Decimal
+) -> None:
     """
     Protect against accidentally reusing a batch_number that belongs to a different real-world delivery.
 
@@ -130,7 +136,9 @@ def _batch_conflict_guard(*, product, batch_number: str, expiry_date, qty: int, 
     - If a StockBatch exists for (product, batch_number), it must match (expiry_date, quantity_received, unit_cost)
       for us to treat it as an idempotent replay. Otherwise, raise a clear conflict.
     """
-    existing = StockBatch.objects.filter(product=product, batch_number=batch_number).first()
+    existing = StockBatch.objects.filter(
+        product=product, batch_number=batch_number
+    ).first()
     if not existing:
         return
 
@@ -193,7 +201,9 @@ def receive_purchase_invoice(
     # Idempotent behavior: if already received, return state (do not re-receive).
     if invoice.status == PurchaseInvoice.STATUS_RECEIVED:
         try:
-            je = _get_existing_purchase_receipt_journal_entry(invoice_id=str(invoice.id))
+            je = _get_existing_purchase_receipt_journal_entry(
+                invoice_id=str(invoice.id)
+            )
             je_id = str(je.id)
         except Exception:
             je_id = ""
@@ -234,7 +244,9 @@ def receive_purchase_invoice(
             raise PurchaseReceivingError("Item unit_cost cannot be negative")
 
         if not (it.batch_number or "").strip():
-            raise PurchaseReceivingError("Item batch_number is required (supplier delivery batch reference)")
+            raise PurchaseReceivingError(
+                "Item batch_number is required (supplier delivery batch reference)"
+            )
 
         if not it.expiry_date:
             raise PurchaseReceivingError("Item expiry_date is required")
@@ -310,7 +322,9 @@ def receive_purchase_invoice(
     invoice.total_amount = total
     invoice.status = PurchaseInvoice.STATUS_RECEIVED
     invoice.received_at = timezone.now()
-    invoice.save(update_fields=["subtotal_amount", "total_amount", "status", "received_at"])
+    invoice.save(
+        update_fields=["subtotal_amount", "total_amount", "status", "received_at"]
+    )
 
     return {
         "invoice_id": str(invoice.id),

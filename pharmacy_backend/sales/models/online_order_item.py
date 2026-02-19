@@ -57,7 +57,9 @@ class OnlineOrderItem(models.Model):
         if self.unit_price is None or Decimal(self.unit_price) <= Decimal("0.00"):
             raise ValidationError("unit_price must be > 0")
 
-        expected = (Decimal(self.quantity) * Decimal(self.unit_price)).quantize(Decimal("0.01"))
+        expected = (Decimal(self.quantity) * Decimal(self.unit_price)).quantize(
+            Decimal("0.01")
+        )
         self.total_price = expected
 
     def save(self, *args, **kwargs):

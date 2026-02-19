@@ -1,8 +1,8 @@
 import random
 from datetime import date, timedelta
 
-from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
+from django.core.management.base import BaseCommand
 
 from products.models import (
     Category,
@@ -69,7 +69,7 @@ class Command(BaseCommand):
 
                 StockBatch.objects.create(
                     product=product,
-                    batch_number=f"BATCH-{i+1}",
+                    batch_number=f"BATCH-{i + 1}",
                     expiry_date=expiry,
                     quantity_received=qty,
                     quantity_remaining=qty,

@@ -1,6 +1,7 @@
-#products/models/category.py
+# products/models/category.py
 
 import uuid
+
 from django.db import models
 
 

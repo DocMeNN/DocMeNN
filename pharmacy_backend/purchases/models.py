@@ -11,7 +11,6 @@ from django.utils import timezone
 from products.models.product import Product
 from store.models.store import Store
 
-
 TWOPLACES = Decimal("0.01")
 
 
@@ -26,6 +25,7 @@ class Supplier(models.Model):
     """
     Supplier master.
     """
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     name = models.CharField(max_length=200)
@@ -56,6 +56,7 @@ class PurchaseInvoice(models.Model):
     - intakes stock (StockBatch + StockMovement(RECEIPT))
     - marks invoice RECEIVED
     """
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     STATUS_DRAFT = "DRAFT"
@@ -88,8 +89,12 @@ class PurchaseInvoice(models.Model):
 
     status = models.CharField(max_length=20, choices=STATUSES, default=STATUS_DRAFT)
 
-    subtotal_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
-    total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    subtotal_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
+    total_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
 
     received_at = models.DateTimeField(null=True, blank=True)
 
@@ -139,16 +144,22 @@ class PurchaseInvoice(models.Model):
             raise ValidationError({"invoice_number": "invoice_number is required"})
 
         if self.subtotal_amount is not None and self.subtotal_amount < Decimal("0.00"):
-            raise ValidationError({"subtotal_amount": "subtotal_amount cannot be negative"})
+            raise ValidationError(
+                {"subtotal_amount": "subtotal_amount cannot be negative"}
+            )
 
         if self.total_amount is not None and self.total_amount < Decimal("0.00"):
             raise ValidationError({"total_amount": "total_amount cannot be negative"})
 
         if self.status == self.STATUS_RECEIVED and not self.received_at:
-            raise ValidationError({"received_at": "received_at is required when status is RECEIVED"})
+            raise ValidationError(
+                {"received_at": "received_at is required when status is RECEIVED"}
+            )
 
         if self.status == self.STATUS_CANCELLED and self.received_at:
-            raise ValidationError({"received_at": "received_at must be empty when status is CANCELLED"})
+            raise ValidationError(
+                {"received_at": "received_at must be empty when status is CANCELLED"}
+            )
 
     def save(self, *args, **kwargs):
         if self.invoice_number is not None:
@@ -167,6 +178,7 @@ class PurchaseInvoiceItem(models.Model):
 
     batch_number is REQUIRED to generate StockBatch safely (unique per product).
     """
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     invoice = models.ForeignKey(
@@ -187,7 +199,9 @@ class PurchaseInvoiceItem(models.Model):
     expiry_date = models.DateField()
 
     quantity = models.PositiveIntegerField()
-    unit_cost = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    unit_cost = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -245,6 +259,7 @@ class SupplierPayment(models.Model):
     - Optional link to invoice (can pay a specific invoice)
     - Ledger posting is idempotent via payment_id
     """
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     supplier = models.ForeignKey(
@@ -262,7 +277,9 @@ class SupplierPayment(models.Model):
     )
 
     payment_date = models.DateField(default=timezone.localdate)
-    amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
 
     METHOD_CASH = "cash"
     METHOD_BANK = "bank"
@@ -272,7 +289,9 @@ class SupplierPayment(models.Model):
         (METHOD_BANK, "Bank"),
     ]
 
-    payment_method = models.CharField(max_length=20, choices=METHODS, default=METHOD_CASH)
+    payment_method = models.CharField(
+        max_length=20, choices=METHODS, default=METHOD_CASH
+    )
     narration = models.CharField(max_length=255, blank=True, default="")
 
     created_by = models.ForeignKey(

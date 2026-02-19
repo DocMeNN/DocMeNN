@@ -1,20 +1,24 @@
 # purchases/services/payment_service.py
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
+
 from django.db import transaction
 from django.utils import timezone
 
 from accounting.models.account import Account
 from accounting.services.account_resolver import (
-    get_active_chart,
-    get_cash_account,
-    get_bank_account,
     get_accounts_payable_account,
+    get_active_chart,
+    get_bank_account,
+    get_cash_account,
+)
+from accounting.services.exceptions import (
+    AccountResolutionError,
+    IdempotencyError,
+    JournalEntryCreationError,
 )
 from accounting.services.posting import post_supplier_payment_to_ledger
-from accounting.services.exceptions import AccountResolutionError, JournalEntryCreationError, IdempotencyError
-
-from purchases.models import Supplier, PurchaseInvoice, SupplierPayment
+from purchases.models import PurchaseInvoice, Supplier, SupplierPayment
 
 
 class SupplierPaymentError(ValueError):
@@ -47,7 +51,9 @@ def _resolve_account_by_code(*, code: str) -> Account:
         ) from exc
 
 
-def _resolve_payment_account(*, payment_method: str, payment_account_code: str | None) -> Account:
+def _resolve_payment_account(
+    *, payment_method: str, payment_account_code: str | None
+) -> Account:
     """
     - If payment_account_code provided -> use it
     - Else auto-resolve from method:
@@ -108,7 +114,11 @@ def pay_supplier_invoice(
 
     # Resolve Accounts Payable (allow override by code)
     ap_code = (payable_account_code or "").strip()
-    payable_account = _resolve_account_by_code(code=ap_code) if ap_code else get_accounts_payable_account()
+    payable_account = (
+        _resolve_account_by_code(code=ap_code)
+        if ap_code
+        else get_accounts_payable_account()
+    )
 
     # Resolve Cash/Bank (allow override by code)
     payment_account = _resolve_payment_account(

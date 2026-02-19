@@ -1,32 +1,31 @@
 # sales/views/refund.py
 
-from rest_framework import status, viewsets, mixins
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from permissions.roles import (
+    CAP_POS_REFUND,
+    CAP_POS_SELL,
+    CAP_REPORTS_VIEW_POS,
+    HasCapability,
+)
 from sales.models.sale import Sale
-from sales.serializers.sale import SaleSerializer
 from sales.serializers.refund_command import SaleRefundCommandSerializer
+from sales.serializers.sale import SaleSerializer
 from sales.services.refund_orchestrator import refund_sale_with_stock_restoration
 from sales.services.refund_service import (
-    RefundError,
-    InvalidSaleStateError,
-    DuplicateRefundError,
     AccountingPostingError,
+    DuplicateRefundError,
+    InvalidSaleStateError,
+    RefundError,
 )
-
-from permissions.roles import (
-    HasCapability,
-    CAP_POS_REFUND,
-    CAP_REPORTS_VIEW_POS,
-    CAP_POS_SELL,
-)
-
 
 # ======================================================
 # API ERROR NORMALIZATION
 # ======================================================
+
 
 def error_response(*, code: str, message: str, http_status: int):
     """
@@ -42,6 +41,7 @@ def error_response(*, code: str, message: str, http_status: int):
 # SALE READ + REFUND VIEWSET
 # ======================================================
 
+
 class SaleRefundViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
@@ -54,14 +54,10 @@ class SaleRefundViewSet(
     - refund: protected capability (admin/manager)
     """
 
-    queryset = (
-        Sale.objects
-        .select_related("user")
-        .prefetch_related(
-            "items",
-            "items__product",
-            "refund_audit",
-        )
+    queryset = Sale.objects.select_related("user").prefetch_related(
+        "items",
+        "items__product",
+        "refund_audit",
     )
 
     serializer_class = SaleSerializer
@@ -87,7 +83,10 @@ class SaleRefundViewSet(
         # If you want to restrict sales visibility only to admin/manager/pharmacist,
         # keep this as capability-based rather than role-based.
         self.required_any_capabilities = {CAP_POS_SELL, CAP_REPORTS_VIEW_POS}
-        from permissions.roles import HasAnyCapability  # local import to avoid circulars
+        from permissions.roles import (
+            HasAnyCapability,  # local import to avoid circulars
+        )
+
         return [IsAuthenticated(), HasAnyCapability()]
 
     def get_serializer_class(self):

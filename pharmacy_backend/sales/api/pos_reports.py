@@ -65,7 +65,9 @@ def _parse_date(date_str: str | None) -> date_cls:
 
 def _date_bounds(day: date_cls):
     tz = timezone.get_current_timezone()
-    start = timezone.make_aware(timezone.datetime(day.year, day.month, day.day, 0, 0, 0), tz)
+    start = timezone.make_aware(
+        timezone.datetime(day.year, day.month, day.day, 0, 0, 0), tz
+    )
     end = start + timezone.timedelta(days=1)
     return start, end
 
@@ -119,7 +121,9 @@ class DailySalesReportView(APIView):
             total_amount=Sum("total_amount"),
         )
 
-        refunds_qs = SaleRefundAudit.objects.filter(refunded_at__gte=start, refunded_at__lt=end)
+        refunds_qs = SaleRefundAudit.objects.filter(
+            refunded_at__gte=start, refunded_at__lt=end
+        )
         refund_count = refunds_qs.count()
         refund_total = sum(_refund_amount_from_audit(a) for a in refunds_qs.iterator())
 
@@ -175,7 +179,8 @@ class DailySalesReportView(APIView):
                 "refund_total_amount": _sum_money(refund_total),
             },
             "net": {
-                "net_total_amount": _sum_money(gross.get("total_amount")) - _sum_money(refund_total),
+                "net_total_amount": _sum_money(gross.get("total_amount"))
+                - _sum_money(refund_total),
             },
             "breakdowns": {
                 "by_payment_method": [
@@ -210,17 +215,25 @@ class CashReconciliationReportView(APIView):
             )
 
             cash_total = _sum_money(
-                alloc_qs.filter(method__iexact="cash").aggregate(s=Sum("amount")).get("s")
+                alloc_qs.filter(method__iexact="cash")
+                .aggregate(s=Sum("amount"))
+                .get("s")
             )
             non_cash_total = _sum_money(
-                alloc_qs.exclude(method__iexact="cash").aggregate(s=Sum("amount")).get("s")
+                alloc_qs.exclude(method__iexact="cash")
+                .aggregate(s=Sum("amount"))
+                .get("s")
             )
         else:
             cash_total = _sum_money(
-                sales_qs.filter(payment_method__iexact="cash").aggregate(s=Sum("total_amount")).get("s")
+                sales_qs.filter(payment_method__iexact="cash")
+                .aggregate(s=Sum("total_amount"))
+                .get("s")
             )
             non_cash_total = _sum_money(
-                sales_qs.exclude(payment_method__iexact="cash").aggregate(s=Sum("total_amount")).get("s")
+                sales_qs.exclude(payment_method__iexact="cash")
+                .aggregate(s=Sum("total_amount"))
+                .get("s")
             )
 
         by_payment_method = list(
@@ -257,7 +270,9 @@ class ZReportView(APIView):
             gross_total_amount=Sum("total_amount"),
         )
 
-        refunds_qs = SaleRefundAudit.objects.filter(refunded_at__gte=start, refunded_at__lt=end)
+        refunds_qs = SaleRefundAudit.objects.filter(
+            refunded_at__gte=start, refunded_at__lt=end
+        )
         refund_total = sum(_refund_amount_from_audit(a) for a in refunds_qs.iterator())
 
         payload = {
@@ -267,7 +282,8 @@ class ZReportView(APIView):
                 "transaction_count": gross.get("transaction_count") or 0,
                 "gross_total_amount": _sum_money(gross.get("gross_total_amount")),
                 "refund_total_amount": _sum_money(refund_total),
-                "net_total_amount": _sum_money(gross.get("gross_total_amount")) - _sum_money(refund_total),
+                "net_total_amount": _sum_money(gross.get("gross_total_amount"))
+                - _sum_money(refund_total),
             },
         }
         return Response(payload)

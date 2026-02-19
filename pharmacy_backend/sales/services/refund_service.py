@@ -21,17 +21,17 @@ HOTSPRINT UPGRADE (COGS + PROFIT READY):
 from django.db import transaction
 from django.utils import timezone
 
-from sales.models.sale import Sale
 from sales.models.refund_audit import SaleRefundAudit
+from sales.models.sale import Sale
 from sales.services.sale_lifecycle import (
-    validate_transition,
     InvalidSaleTransitionError,
+    validate_transition,
 )
-
 
 # ============================================================
 # DOMAIN ERRORS
 # ============================================================
+
 
 class RefundError(Exception):
     pass
@@ -53,12 +53,14 @@ class AccountingPostingError(RefundError):
     The refund workflow is a SALES-domain concern, even if ledger posting
     is performed by an accounting service/adapter.
     """
+
     pass
 
 
 # ============================================================
 # REFUND SERVICE
 # ============================================================
+
 
 @transaction.atomic
 def refund_sale(
@@ -110,13 +112,11 @@ def refund_sale(
         refunded_by=user,
         reason=(refund_reason or "").strip(),
         refunded_at=now,
-
         # Money snapshots (authoritative)
         original_subtotal_amount=getattr(sale, "subtotal_amount", None) or 0,
         original_tax_amount=getattr(sale, "tax_amount", None) or 0,
         original_discount_amount=getattr(sale, "discount_amount", None) or 0,
         original_total_amount=getattr(sale, "total_amount", None) or 0,
-
         # Cost/profit snapshots (authoritative)
         original_cogs_amount=getattr(sale, "cogs_amount", None) or 0,
         original_gross_profit_amount=getattr(sale, "gross_profit_amount", None) or 0,

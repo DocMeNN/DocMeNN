@@ -1,8 +1,8 @@
 from django.contrib import admin
 
+from sales.models.refund_audit import SaleRefundAudit
 from sales.models.sale import Sale
 from sales.models.sale_item import SaleItem
-from sales.models.refund_audit import SaleRefundAudit
 
 
 @admin.register(Sale)

@@ -15,8 +15,6 @@ Rules:
 - Uses same stock FIFO + ledger posting guarantees as POS
 """
 
-
-
 from django.urls import path
 
 from sales.views.public_checkout import PublicCheckoutView, PublicReceiptView

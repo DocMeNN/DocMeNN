@@ -3,12 +3,14 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from accounting.models.chart import ChartOfAccounts
 from accounting.models.account import Account
+from accounting.models.chart import ChartOfAccounts
 
 
 def _activate_only_this_chart(chart: ChartOfAccounts) -> None:
-    ChartOfAccounts.objects.exclude(id=chart.id).filter(is_active=True).update(is_active=False)
+    ChartOfAccounts.objects.exclude(id=chart.id).filter(is_active=True).update(
+        is_active=False
+    )
     if not chart.is_active:
         chart.is_active = True
         chart.save(update_fields=["is_active"])
@@ -58,19 +60,15 @@ class Command(BaseCommand):
             ("1010", "Bank Account", Account.ASSET),
             ("1100", "Inventory", Account.ASSET),
             ("1200", "Accounts Receivable", Account.ASSET),
-
             # LIABILITIES
             ("2000", "Accounts Payable", Account.LIABILITY),
             ("2100", "VAT Payable", Account.LIABILITY),
-
             # EQUITY
             ("3000", "Owner Capital", Account.EQUITY),
             ("3100", "Retained Earnings", Account.EQUITY),
-
             # REVENUE
             ("4000", "Sales Revenue", Account.REVENUE),
             ("4050", "Sales Discounts", Account.REVENUE),  # contra-revenue
-
             # EXPENSES
             ("5000", "Cost of Goods Sold", Account.EXPENSE),
             ("6000", "Operating Expenses", Account.EXPENSE),
@@ -83,7 +81,11 @@ class Command(BaseCommand):
             acc, acc_created = Account.objects.get_or_create(
                 chart=chart,
                 code=code,
-                defaults={"name": name, "account_type": account_type, "is_active": True},
+                defaults={
+                    "name": name,
+                    "account_type": account_type,
+                    "is_active": True,
+                },
             )
 
             if acc_created:
@@ -105,6 +107,8 @@ class Command(BaseCommand):
                 acc.save(update_fields=["name", "account_type", "is_active"])
                 updated_count += 1
 
-        self.stdout.write(self.style.SUCCESS(
-            f"✔ Pharmacy chart seeded ({created_count} new accounts, {updated_count} updated)."
-        ))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"✔ Pharmacy chart seeded ({created_count} new accounts, {updated_count} updated)."
+            )
+        )

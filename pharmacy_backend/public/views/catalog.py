@@ -17,18 +17,16 @@ Security hardening:
 from __future__ import annotations
 
 from django.core.exceptions import FieldDoesNotExist
-
-from rest_framework.views import APIView
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from rest_framework import serializers, status
+from rest_framework.parsers import JSONParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework import status, serializers
-from rest_framework.parsers import JSONParser
 from rest_framework.throttling import AnonRateThrottle
+from rest_framework.views import APIView
 
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
-
-from store.models import Store
 from products.models import Product
+from store.models import Store
 
 
 class PublicCatalogThrottle(AnonRateThrottle):
@@ -50,6 +48,7 @@ class PublicCatalogView(APIView):
     """
     GET /api/public/catalog/?store_id=<uuid>
     """
+
     permission_classes = [AllowAny]
     parser_classes = [JSONParser]
     throttle_classes = [PublicCatalogThrottle]
@@ -80,7 +79,9 @@ class PublicCatalogView(APIView):
 
         store = Store.objects.filter(id=store_id, is_active=True).first()
         if not store:
-            return Response({"detail": "Store not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Store not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
         products = Product.objects.filter(is_active=True)
 

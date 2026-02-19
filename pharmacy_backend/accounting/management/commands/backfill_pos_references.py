@@ -6,8 +6,8 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from accounting.models.journal import JournalEntry
-from sales.models.sale import Sale
 from sales.models.refund_audit import SaleRefundAudit
+from sales.models.sale import Sale
 
 
 class Command(BaseCommand):
@@ -36,7 +36,9 @@ class Command(BaseCommand):
         # -----------------------------
         # SALES
         # -----------------------------
-        sales = Sale.objects.filter(status=Sale.STATUS_COMPLETED).only("id", "invoice_no")
+        sales = Sale.objects.filter(status=Sale.STATUS_COMPLETED).only(
+            "id", "invoice_no"
+        )
 
         for sale in sales:
             ref = f"POS_SALE:{sale.id}"
@@ -70,7 +72,11 @@ class Command(BaseCommand):
         # -----------------------------
         # REFUNDS
         # -----------------------------
-        audits = SaleRefundAudit.objects.all().select_related("sale").only("id", "sale__invoice_no")
+        audits = (
+            SaleRefundAudit.objects.all()
+            .select_related("sale")
+            .only("id", "sale__invoice_no")
+        )
 
         for audit in audits:
             ref = f"POS_REFUND:{audit.id}"

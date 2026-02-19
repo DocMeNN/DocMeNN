@@ -1,4 +1,4 @@
-from .auth import RegisterView, LoginView
+from .auth import LoginView, RegisterView
 from .me import MeView
 
 __all__ = [

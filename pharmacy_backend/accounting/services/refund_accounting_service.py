@@ -14,8 +14,8 @@ NO accounting math lives here.
 NO ledger writes live here.
 """
 
-from accounting.services.posting_rules_refund import post_pos_refund
 from accounting.services.exceptions import AccountingServiceError
+from accounting.services.posting_rules_refund import post_pos_refund
 
 
 def post_refund_to_accounting(refund):

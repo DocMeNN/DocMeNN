@@ -16,8 +16,8 @@ NO journal / ledger writes live here.
 
 from django.db import transaction
 
-from accounting.services.posting_rules import post_pos_sale
 from accounting.services.exceptions import AccountingServiceError
+from accounting.services.posting_rules import post_pos_sale
 
 
 @transaction.atomic

@@ -19,7 +19,7 @@ Design:
 
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import date, datetime
 
 from django.utils import timezone
 

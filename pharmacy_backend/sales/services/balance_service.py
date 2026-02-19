@@ -20,16 +20,17 @@ RULES:
 """
 
 from decimal import Decimal
-from django.db.models import Sum, Case, When, F
+
+from django.db.models import Case, F, Sum, When
 from django.db.models.functions import Coalesce
 
 from accounting.models.account import Account
 from accounting.models.ledger import LedgerEntry
 
-
 # ============================================================
 # DOMAIN ERRORS
 # ============================================================
+
 
 class BalanceServiceError(Exception):
     """Base error for balance and reporting services"""
@@ -38,6 +39,7 @@ class BalanceServiceError(Exception):
 # ============================================================
 # CORE BALANCE HELPERS
 # ============================================================
+
 
 def get_account_balance(account: Account) -> Decimal:
     """
@@ -51,23 +53,13 @@ def get_account_balance(account: Account) -> Decimal:
     if account is None:
         raise BalanceServiceError("Account is required")
 
-    aggregates = LedgerEntry.objects.filter(
-        account=account
-    ).aggregate(
+    aggregates = LedgerEntry.objects.filter(account=account).aggregate(
         debit_total=Coalesce(
-            Sum(
-                Case(
-                    When(entry_type=LedgerEntry.DEBIT, then=F("amount"))
-                )
-            ),
+            Sum(Case(When(entry_type=LedgerEntry.DEBIT, then=F("amount")))),
             Decimal("0.00"),
         ),
         credit_total=Coalesce(
-            Sum(
-                Case(
-                    When(entry_type=LedgerEntry.CREDIT, then=F("amount"))
-                )
-            ),
+            Sum(Case(When(entry_type=LedgerEntry.CREDIT, then=F("amount")))),
             Decimal("0.00"),
         ),
     )
@@ -84,6 +76,7 @@ def get_account_balance(account: Account) -> Decimal:
 # ============================================================
 # TRIAL BALANCE
 # ============================================================
+
 
 def get_trial_balance(chart) -> list[dict]:
     """
@@ -115,13 +108,15 @@ def get_trial_balance(chart) -> list[dict]:
     for account in accounts:
         balance = get_account_balance(account)
 
-        results.append({
-            "account": account,
-            "code": account.code,
-            "name": account.name,
-            "account_type": account.account_type,
-            "balance": balance,
-        })
+        results.append(
+            {
+                "account": account,
+                "code": account.code,
+                "name": account.name,
+                "account_type": account.account_type,
+                "balance": balance,
+            }
+        )
 
     return results
 
@@ -129,6 +124,7 @@ def get_trial_balance(chart) -> list[dict]:
 # ============================================================
 # TOTALS BY ACCOUNT TYPE
 # ============================================================
+
 
 def get_totals_by_account_type(chart) -> dict:
     """
@@ -163,6 +159,7 @@ def get_totals_by_account_type(chart) -> dict:
 # ============================================================
 # PROFIT & LOSS (FOUNDATION)
 # ============================================================
+
 
 def get_profit_and_loss(chart) -> dict:
     """

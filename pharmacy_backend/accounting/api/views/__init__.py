@@ -12,18 +12,18 @@ Important:
 
 # ViewSets
 from accounting.api.view import JournalEntryViewSet, LedgerEntryViewSet
-
-# Read-only reports
-from accounting.api.views.trial_balance import TrialBalanceView
+from accounting.api.views.accounts import ActiveChartAccountsView
 from accounting.api.views.balance_sheet import BalanceSheetView
-from accounting.api.views.profit_and_loss import ProfitAndLossView
-from accounting.api.views.overview import AccountingOverviewView
+from accounting.api.views.close_period import ClosePeriodView
+from accounting.api.views.expenses import ExpenseListCreateView
 
 # Posting actions / master data
 from accounting.api.views.opening_balances import OpeningBalancesCreateView
-from accounting.api.views.expenses import ExpenseListCreateView
-from accounting.api.views.close_period import ClosePeriodView
-from accounting.api.views.accounts import ActiveChartAccountsView
+from accounting.api.views.overview import AccountingOverviewView
+from accounting.api.views.profit_and_loss import ProfitAndLossView
+
+# Read-only reports
+from accounting.api.views.trial_balance import TrialBalanceView
 
 __all__ = [
     "JournalEntryViewSet",

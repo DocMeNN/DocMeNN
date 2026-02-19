@@ -10,8 +10,8 @@ from django.utils import timezone
 
 from accounting.models.journal import JournalEntry
 from accounting.models.ledger import LedgerEntry
-from sales.models.sale import Sale
 from sales.models.refund_audit import SaleRefundAudit
+from sales.models.sale import Sale
 
 
 def _parse_date(s: str | None):
@@ -43,7 +43,9 @@ def _bounds(date_from, date_to):
         return None, None
 
     start = timezone.make_aware(datetime.combine(date_from, datetime.min.time()), tz)
-    end = timezone.make_aware(datetime.combine(date_to, datetime.min.time()), tz) + timezone.timedelta(days=1)
+    end = timezone.make_aware(
+        datetime.combine(date_to, datetime.min.time()), tz
+    ) + timezone.timedelta(days=1)
     return start, end
 
 
@@ -123,17 +125,29 @@ class Command(BaseCommand):
 
         if missing_sales_refs:
             errors += len(missing_sales_refs)
-            self.stderr.write(self.style.ERROR(f"[FAIL] Missing POS_SALE journal entries: {len(missing_sales_refs)}"))
+            self.stderr.write(
+                self.style.ERROR(
+                    f"[FAIL] Missing POS_SALE journal entries: {len(missing_sales_refs)}"
+                )
+            )
             self.stderr.write("  Example IDs: " + ", ".join(missing_sales_refs[:10]))
 
         if duplicate_sales_refs:
             errors += len(duplicate_sales_refs)
-            self.stderr.write(self.style.ERROR(f"[FAIL] Duplicate POS_SALE journal entries: {len(duplicate_sales_refs)}"))
+            self.stderr.write(
+                self.style.ERROR(
+                    f"[FAIL] Duplicate POS_SALE journal entries: {len(duplicate_sales_refs)}"
+                )
+            )
             for sid, cnt in duplicate_sales_refs[:10]:
                 self.stderr.write(f"  sale_id={sid} count={cnt}")
 
         if not missing_sales_refs and not duplicate_sales_refs:
-            self.stdout.write(self.style.SUCCESS("[OK] Sales references look good (POS_SALE:<sale.id>)"))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "[OK] Sales references look good (POS_SALE:<sale.id>)"
+                )
+            )
 
         # -----------------------------
         # 2) Refunds → Journal reference
@@ -151,17 +165,29 @@ class Command(BaseCommand):
 
         if missing_refund_refs:
             errors += len(missing_refund_refs)
-            self.stderr.write(self.style.ERROR(f"[FAIL] Missing POS_REFUND journal entries: {len(missing_refund_refs)}"))
+            self.stderr.write(
+                self.style.ERROR(
+                    f"[FAIL] Missing POS_REFUND journal entries: {len(missing_refund_refs)}"
+                )
+            )
             self.stderr.write("  Example IDs: " + ", ".join(missing_refund_refs[:10]))
 
         if duplicate_refund_refs:
             errors += len(duplicate_refund_refs)
-            self.stderr.write(self.style.ERROR(f"[FAIL] Duplicate POS_REFUND journal entries: {len(duplicate_refund_refs)}"))
+            self.stderr.write(
+                self.style.ERROR(
+                    f"[FAIL] Duplicate POS_REFUND journal entries: {len(duplicate_refund_refs)}"
+                )
+            )
             for rid, cnt in duplicate_refund_refs[:10]:
                 self.stderr.write(f"  refund_audit_id={rid} count={cnt}")
 
         if not missing_refund_refs and not duplicate_refund_refs:
-            self.stdout.write(self.style.SUCCESS("[OK] Refund references look good (POS_REFUND:<audit.id>)"))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "[OK] Refund references look good (POS_REFUND:<audit.id>)"
+                )
+            )
 
         # -----------------------------
         # 3) Ledger global balance check
@@ -169,7 +195,9 @@ class Command(BaseCommand):
         ledger_qs = LedgerEntry.objects.all()
         if start and end:
             # Ledger entries time is typically journal_entry.posted_at
-            ledger_qs = ledger_qs.filter(journal_entry__posted_at__gte=start, journal_entry__posted_at__lt=end)
+            ledger_qs = ledger_qs.filter(
+                journal_entry__posted_at__gte=start, journal_entry__posted_at__lt=end
+            )
 
         debits = (
             ledger_qs.filter(entry_type=LedgerEntry.DEBIT)
@@ -186,15 +214,27 @@ class Command(BaseCommand):
 
         if debits != credits:
             errors += 1
-            self.stderr.write(self.style.ERROR(f"[FAIL] Ledger not balanced: debits={debits} credits={credits}"))
+            self.stderr.write(
+                self.style.ERROR(
+                    f"[FAIL] Ledger not balanced: debits={debits} credits={credits}"
+                )
+            )
         else:
-            self.stdout.write(self.style.SUCCESS(f"[OK] Ledger balanced: debits={debits} credits={credits}"))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"[OK] Ledger balanced: debits={debits} credits={credits}"
+                )
+            )
 
         self.stdout.write("")
         if errors == 0:
-            self.stdout.write(self.style.SUCCESS("✅ VALIDATION PASSED (Phase 1.3 proof check)"))
+            self.stdout.write(
+                self.style.SUCCESS("✅ VALIDATION PASSED (Phase 1.3 proof check)")
+            )
         else:
-            self.stderr.write(self.style.ERROR(f"❌ VALIDATION FOUND ISSUES: {errors} problem(s)"))
+            self.stderr.write(
+                self.style.ERROR(f"❌ VALIDATION FOUND ISSUES: {errors} problem(s)")
+            )
 
         return self._exit(strict and errors > 0)
 

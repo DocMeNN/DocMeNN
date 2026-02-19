@@ -2,15 +2,15 @@
 
 from django.contrib import admin
 
-from accounting.models.chart import ChartOfAccounts
 from accounting.models.account import Account
+from accounting.models.chart import ChartOfAccounts
 from accounting.models.journal import JournalEntry
 from accounting.models.ledger import LedgerEntry
-
 
 # ============================================================
 # CHART OF ACCOUNTS
 # ============================================================
+
 
 @admin.register(ChartOfAccounts)
 class ChartOfAccountsAdmin(admin.ModelAdmin):
@@ -30,6 +30,7 @@ class ChartOfAccountsAdmin(admin.ModelAdmin):
 # ============================================================
 # ACCOUNT
 # ============================================================
+
 
 @admin.register(Account)
 class AccountAdmin(admin.ModelAdmin):
@@ -71,6 +72,7 @@ class AccountAdmin(admin.ModelAdmin):
 # JOURNAL ENTRY (READ-ONLY)
 # ============================================================
 
+
 @admin.register(JournalEntry)
 class JournalEntryAdmin(admin.ModelAdmin):
     list_display = (
@@ -106,6 +108,7 @@ class JournalEntryAdmin(admin.ModelAdmin):
 # ============================================================
 # LEDGER ENTRY (STRICTLY IMMUTABLE)
 # ============================================================
+
 
 @admin.register(LedgerEntry)
 class LedgerEntryAdmin(admin.ModelAdmin):

@@ -99,9 +99,13 @@ def create_opening_balances(
     for line in payload.lines:
         account = accounts_by_code[line.account_code]
         if line.dc == "D":
-            postings.append({"account": account, "debit": line.amount, "credit": Decimal("0.00")})
+            postings.append(
+                {"account": account, "debit": line.amount, "credit": Decimal("0.00")}
+            )
         else:
-            postings.append({"account": account, "debit": Decimal("0.00"), "credit": line.amount})
+            postings.append(
+                {"account": account, "debit": Decimal("0.00"), "credit": line.amount}
+            )
 
     posted_at_dt = _end_of_day_aware(payload.as_of_date)
     reference_id = build_opening_balance_reference_id(

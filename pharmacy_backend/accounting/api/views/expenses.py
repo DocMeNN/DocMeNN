@@ -19,25 +19,23 @@ Phase 5 Notes:
 - Tenant safety: best-effort scoping hook; superuser override
 """
 
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.generics import GenericAPIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
-from drf_spectacular.utils import extend_schema
-
-from accounting.models.expense import Expense
 from accounting.api.serializers.expenses import (
-    ExpenseSerializer,
     ExpenseCreateSerializer,
+    ExpenseSerializer,
 )
-from accounting.services.expense_service import (
-    create_expense_and_post,
-    ExpensePostingError,
-    ExpensePermissionError,
-)
+from accounting.models.expense import Expense
 from accounting.services.account_resolver import get_active_chart
-
+from accounting.services.expense_service import (
+    ExpensePermissionError,
+    ExpensePostingError,
+    create_expense_and_post,
+)
 
 EXPENSE_VIEW_PERMISSION = "accounting.view_ledgerentry"
 EXPENSE_POST_PERMISSION = "accounting.add_expense"
@@ -100,7 +98,9 @@ class ExpenseListCreateView(GenericAPIView):
 
         qs = _scope_expenses_queryset(request, qs)
 
-        return Response(ExpenseSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(
+            ExpenseSerializer(qs, many=True).data, status=status.HTTP_200_OK
+        )
 
     @extend_schema(
         tags=["accounting"],

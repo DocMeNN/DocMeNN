@@ -25,8 +25,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from django.db import transaction
 from django.core.exceptions import ValidationError
+from django.db import transaction
 
 from products.models.stock_batch import StockBatch
 from products.models.stock_movement import StockMovement
@@ -235,7 +235,9 @@ def adjust_stock(*, batch: StockBatch, quantity_delta: int, user=None) -> StockB
     unit_cost = _require_unit_cost(batch)
 
     if not _has_receipt_movement(batch):
-        raise ValidationError("Cannot adjust stock before batch is received (missing RECEIPT movement)")
+        raise ValidationError(
+            "Cannot adjust stock before batch is received (missing RECEIPT movement)"
+        )
 
     current = int(batch.quantity_remaining or 0)
     new_quantity = current + delta
@@ -250,7 +252,11 @@ def adjust_stock(*, batch: StockBatch, quantity_delta: int, user=None) -> StockB
     StockMovement.objects.create(
         product=batch.product,
         batch=batch,
-        movement_type=(StockMovement.MovementType.IN if delta > 0 else StockMovement.MovementType.OUT),
+        movement_type=(
+            StockMovement.MovementType.IN
+            if delta > 0
+            else StockMovement.MovementType.OUT
+        ),
         reason=StockMovement.Reason.ADJUSTMENT,
         quantity=abs(delta),
         unit_cost_snapshot=unit_cost,
@@ -272,7 +278,9 @@ def expire_stock(*, batch: StockBatch, user=None) -> StockBatch:
     unit_cost = _require_unit_cost(batch)
 
     if not _has_receipt_movement(batch):
-        raise ValidationError("Cannot expire stock before batch is received (missing RECEIPT movement)")
+        raise ValidationError(
+            "Cannot expire stock before batch is received (missing RECEIPT movement)"
+        )
 
     expired_qty = remaining
     batch.quantity_remaining = 0

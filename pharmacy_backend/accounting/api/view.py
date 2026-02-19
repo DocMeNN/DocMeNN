@@ -23,14 +23,14 @@ Model guarantee:
   so there is no LedgerEntry.is_posted field and no extra filtering is required.
 """
 
+from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ReadOnlyModelViewSet
-from rest_framework.exceptions import PermissionDenied
-from drf_spectacular.utils import extend_schema, OpenApiParameter
 
+from accounting.api.serializers import JournalEntrySerializer, LedgerEntrySerializer
 from accounting.models.journal import JournalEntry
 from accounting.models.ledger import LedgerEntry
-from accounting.api.serializers import JournalEntrySerializer, LedgerEntrySerializer
 
 
 @extend_schema(tags=["accounting"])
@@ -47,7 +47,9 @@ class JournalEntryViewSet(ReadOnlyModelViewSet):
 
     def get_queryset(self):
         if not self.request.user.has_perm("accounting.view_journalentry"):
-            raise PermissionDenied("You do not have permission to view journal entries.")
+            raise PermissionDenied(
+                "You do not have permission to view journal entries."
+            )
         return super().get_queryset()
 
 

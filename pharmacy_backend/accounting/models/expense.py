@@ -6,7 +6,6 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Q
-
 from django.utils import timezone
 
 from accounting.models.account import Account
@@ -98,14 +97,22 @@ class Expense(models.Model):
     def clean(self):
         # Same-chart integrity
         if self.expense_account_id and self.payment_account_id:
-            if getattr(self.expense_account, "chart_id", None) != getattr(self.payment_account, "chart_id", None):
-                raise ValidationError("expense_account and payment_account must belong to the same chart.")
+            if getattr(self.expense_account, "chart_id", None) != getattr(
+                self.payment_account, "chart_id", None
+            ):
+                raise ValidationError(
+                    "expense_account and payment_account must belong to the same chart."
+                )
 
         # Posted state consistency
         if self.is_posted and self.posted_journal_entry_id is None:
-            raise ValidationError("posted_journal_entry is required when is_posted=True.")
+            raise ValidationError(
+                "posted_journal_entry is required when is_posted=True."
+            )
         if not self.is_posted and self.posted_journal_entry_id is not None:
-            raise ValidationError("posted_journal_entry must be null when is_posted=False.")
+            raise ValidationError(
+                "posted_journal_entry must be null when is_posted=False."
+            )
 
     def save(self, *args, **kwargs):
         # Block edits ONLY if already posted in DB (still allows one-time transition)

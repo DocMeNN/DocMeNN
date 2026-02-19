@@ -238,7 +238,9 @@ def _normalize_refund_items(*, sale, items):
 
         pid = line.get("product_id") or line.get("product")
         if not pid:
-            raise StockRestorationError("Refund item must include sale_item_id or product_id")
+            raise StockRestorationError(
+                "Refund item must include sale_item_id or product_id"
+            )
 
         requested_by_product[str(pid)] += qty
 
@@ -341,7 +343,9 @@ def restore_stock_from_sale(*, sale, user=None, items=None):
             remaining_by_product[str(product_id)] = need - int(restore_qty)
 
     if remaining_by_product is not None:
-        missing = {pid: qty for pid, qty in remaining_by_product.items() if int(qty) > 0}
+        missing = {
+            pid: qty for pid, qty in remaining_by_product.items() if int(qty) > 0
+        }
         if missing:
             raise StockRestorationError(
                 "Unable to restore requested refund quantities (insufficient refundable stock history). "
@@ -349,6 +353,8 @@ def restore_stock_from_sale(*, sale, user=None, items=None):
             )
 
     if not created:
-        raise StockRestorationError(f"No refundable stock movements remaining for sale {sale.id}.")
+        raise StockRestorationError(
+            f"No refundable stock movements remaining for sale {sale.id}."
+        )
 
     return created

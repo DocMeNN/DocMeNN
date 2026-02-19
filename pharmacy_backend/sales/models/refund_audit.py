@@ -39,13 +39,25 @@ class SaleRefundAudit(models.Model):
     reason = models.TextField(null=True, blank=True, help_text="Optional refund reason")
     refunded_at = models.DateTimeField(default=timezone.now)
 
-    original_subtotal_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    original_tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    original_discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    original_total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    original_subtotal_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    original_tax_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    original_discount_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    original_total_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
 
-    original_cogs_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    original_gross_profit_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    original_cogs_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    original_gross_profit_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
 
     class Meta:
         ordering = ["-refunded_at"]
@@ -54,13 +66,19 @@ class SaleRefundAudit(models.Model):
         if not self._state.adding:
             raise RuntimeError("SaleRefundAudit records are immutable")
 
-        self.original_subtotal_amount = Decimal(getattr(self.sale, "subtotal_amount", 0) or 0)
+        self.original_subtotal_amount = Decimal(
+            getattr(self.sale, "subtotal_amount", 0) or 0
+        )
         self.original_tax_amount = Decimal(getattr(self.sale, "tax_amount", 0) or 0)
-        self.original_discount_amount = Decimal(getattr(self.sale, "discount_amount", 0) or 0)
+        self.original_discount_amount = Decimal(
+            getattr(self.sale, "discount_amount", 0) or 0
+        )
         self.original_total_amount = Decimal(getattr(self.sale, "total_amount", 0) or 0)
 
         self.original_cogs_amount = Decimal(getattr(self.sale, "cogs_amount", 0) or 0)
-        self.original_gross_profit_amount = Decimal(getattr(self.sale, "gross_profit_amount", 0) or 0)
+        self.original_gross_profit_amount = Decimal(
+            getattr(self.sale, "gross_profit_amount", 0) or 0
+        )
 
         super().save(*args, **kwargs)
 

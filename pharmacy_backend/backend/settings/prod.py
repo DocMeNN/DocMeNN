@@ -30,7 +30,9 @@ DEBUG = False
 # ----------------------------
 _secret_key = (env("SECRET_KEY", default="") or "").strip()
 if not _secret_key or _secret_key == "dev-insecure-change-me":
-    raise ImproperlyConfigured("SECRET_KEY must be set to a strong value in production.")
+    raise ImproperlyConfigured(
+        "SECRET_KEY must be set to a strong value in production."
+    )
 SECRET_KEY = _secret_key
 
 # ----------------------------
@@ -45,10 +47,14 @@ if not ALLOWED_HOSTS:
 # ----------------------------
 database_url_raw = (env("DATABASE_URL", default="") or "").strip()
 if not database_url_raw:
-    raise ImproperlyConfigured("DATABASE_URL must be set in production (Render Postgres).")
+    raise ImproperlyConfigured(
+        "DATABASE_URL must be set in production (Render Postgres)."
+    )
 
 if database_url_raw.startswith("sqlite"):
-    raise ImproperlyConfigured("Refusing to start in production with SQLite DATABASE_URL.")
+    raise ImproperlyConfigured(
+        "Refusing to start in production with SQLite DATABASE_URL."
+    )
 
 DATABASES = {"default": env.db("DATABASE_URL")}
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("DB_CONN_MAX_AGE", default=60)
@@ -70,7 +76,9 @@ SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
 
 # HSTS (start modest; can increase later)
 SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=3600)
-SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool(
+    "SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True
+)
 SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=False)
 
 # ----------------------------
@@ -105,9 +113,13 @@ if not CSRF_TRUSTED_ORIGINS:
     raise ImproperlyConfigured("CSRF_TRUSTED_ORIGINS must be set in production.")
 
 if any("localhost" in o or "127.0.0.1" in o for o in CORS_ALLOWED_ORIGINS):
-    raise ImproperlyConfigured("Remove localhost from CORS_ALLOWED_ORIGINS in production.")
+    raise ImproperlyConfigured(
+        "Remove localhost from CORS_ALLOWED_ORIGINS in production."
+    )
 if any("localhost" in o or "127.0.0.1" in o for o in CSRF_TRUSTED_ORIGINS):
-    raise ImproperlyConfigured("Remove localhost from CSRF_TRUSTED_ORIGINS in production.")
+    raise ImproperlyConfigured(
+        "Remove localhost from CSRF_TRUSTED_ORIGINS in production."
+    )
 if any(o.startswith("http://") for o in CORS_ALLOWED_ORIGINS):
     raise ImproperlyConfigured("CORS_ALLOWED_ORIGINS must be https:// in production.")
 if any(o.startswith("http://") for o in CSRF_TRUSTED_ORIGINS):

@@ -50,31 +50,37 @@ def post_pos_sale(sale):
     # DEBIT: CASH / BANK
     # --------------------------------------------------
     if total_amount > Decimal("0.00"):
-        postings.append({
-            "account": get_cash_account(),
-            "debit": total_amount,
-            "credit": Decimal("0.00"),
-        })
+        postings.append(
+            {
+                "account": get_cash_account(),
+                "debit": total_amount,
+                "credit": Decimal("0.00"),
+            }
+        )
 
     # --------------------------------------------------
     # CREDIT: SALES REVENUE
     # --------------------------------------------------
     if subtotal_amount > Decimal("0.00"):
-        postings.append({
-            "account": get_sales_revenue_account(),
-            "debit": Decimal("0.00"),
-            "credit": subtotal_amount,
-        })
+        postings.append(
+            {
+                "account": get_sales_revenue_account(),
+                "debit": Decimal("0.00"),
+                "credit": subtotal_amount,
+            }
+        )
 
     # --------------------------------------------------
     # CREDIT: VAT PAYABLE
     # --------------------------------------------------
     if tax_amount > Decimal("0.00"):
-        postings.append({
-            "account": get_vat_payable_account(),
-            "debit": Decimal("0.00"),
-            "credit": tax_amount,
-        })
+        postings.append(
+            {
+                "account": get_vat_payable_account(),
+                "debit": Decimal("0.00"),
+                "credit": tax_amount,
+            }
+        )
 
     if not postings:
         raise ValueError("No accounting postings generated for POS sale")

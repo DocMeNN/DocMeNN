@@ -7,21 +7,19 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.apps import apps
-from django.test import TestCase
-from django.urls import reverse
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
-
-from rest_framework.test import APIClient
 from rest_framework import status
-
-from sales.models.sale import Sale
-from sales.models.sale_item import SaleItem
-from sales.models.refund_audit import RefundAudit
+from rest_framework.test import APIClient
 
 from products.models import Product, StockBatch
 from products.services.stock_fifo import deduct_stock_fifo
+from sales.models.refund_audit import RefundAudit
+from sales.models.sale import Sale
+from sales.models.sale_item import SaleItem
 
 User = get_user_model()
 
@@ -30,6 +28,7 @@ User = get_user_model()
 # Accounting seeding helpers
 # -----------------------------
 
+
 def _pick_choice_value(field):
     choices = getattr(field, "choices", None)
     if not choices:
@@ -37,10 +36,18 @@ def _pick_choice_value(field):
 
     first = choices[0]
     # flat: [(value, label), ...]
-    if isinstance(first, (list, tuple)) and len(first) == 2 and not isinstance(first[1], (list, tuple)):
+    if (
+        isinstance(first, (list, tuple))
+        and len(first) == 2
+        and not isinstance(first[1], (list, tuple))
+    ):
         return first[0]
     # grouped: [(group, [(value,label), ...]), ...]
-    if isinstance(first, (list, tuple)) and len(first) == 2 and isinstance(first[1], (list, tuple)):
+    if (
+        isinstance(first, (list, tuple))
+        and len(first) == 2
+        and isinstance(first[1], (list, tuple))
+    ):
         inner = first[1]
         if inner and isinstance(inner[0], (list, tuple)) and len(inner[0]) == 2:
             return inner[0][0]
@@ -56,11 +63,15 @@ def _default_for_field(field):
 
     if isinstance(field, models.BooleanField):
         return True
-    if isinstance(field, (models.IntegerField, models.BigIntegerField, models.SmallIntegerField)):
+    if isinstance(
+        field, (models.IntegerField, models.BigIntegerField, models.SmallIntegerField)
+    ):
         return 1
     if isinstance(field, models.DecimalField):
         return Decimal("0.00")
-    if isinstance(field, models.DateField) and not isinstance(field, models.DateTimeField):
+    if isinstance(field, models.DateField) and not isinstance(
+        field, models.DateTimeField
+    ):
         return date.today()
     if isinstance(field, models.DateTimeField):
         return timezone.now()
@@ -92,7 +103,9 @@ def _create_active_chart_and_accounts():
         for fname, field in fields.items():
             if fname in payload:
                 continue
-            if getattr(field, "primary_key", False) or getattr(field, "auto_created", False):
+            if getattr(field, "primary_key", False) or getattr(
+                field, "auto_created", False
+            ):
                 continue
             if hasattr(field, "has_default") and field.has_default():
                 continue
@@ -134,7 +147,9 @@ def _create_active_chart_and_accounts():
                         raise
 
         if chart is None:
-            raise ValidationError("Unable to create an active ChartOfAccounts for refund tests.")
+            raise ValidationError(
+                "Unable to create an active ChartOfAccounts for refund tests."
+            )
 
     # Find “account inside chart” model: must have 'code' and FK to ChartOfAccounts
     AccountModel = None
@@ -144,7 +159,11 @@ def _create_active_chart_and_accounts():
         if "code" not in field_names:
             continue
         for f in m._meta.fields:
-            if f.is_relation and getattr(f, "many_to_one", False) and getattr(f.remote_field, "model", None) == chart.__class__:
+            if (
+                f.is_relation
+                and getattr(f, "many_to_one", False)
+                and getattr(f.remote_field, "model", None) == chart.__class__
+            ):
                 AccountModel = m
                 chart_fk_field = f.name
                 break
@@ -158,7 +177,9 @@ def _create_active_chart_and_accounts():
     fields = {f.name: f for f in AccountModel._meta.fields}
 
     def upsert(code: str, name: str):
-        qs = AccountModel.objects.filter(code=str(code)).filter(**{chart_fk_field: chart})
+        qs = AccountModel.objects.filter(code=str(code)).filter(
+            **{chart_fk_field: chart}
+        )
         obj = qs.first()
         if obj:
             if "is_active" in fields and getattr(obj, "is_active", True) is not True:
@@ -175,7 +196,9 @@ def _create_active_chart_and_accounts():
         for fname, field in fields.items():
             if fname in payload:
                 continue
-            if getattr(field, "primary_key", False) or getattr(field, "auto_created", False):
+            if getattr(field, "primary_key", False) or getattr(
+                field, "auto_created", False
+            ):
                 continue
             if hasattr(field, "has_default") and field.has_default():
                 continue
@@ -213,7 +236,9 @@ def _create_active_chart_and_accounts():
                     else:
                         raise
 
-        raise ValidationError(f"Unable to create required account code={code} for refund tests.")
+        raise ValidationError(
+            f"Unable to create required account code={code} for refund tests."
+        )
 
     # Seed common posting codes (based on earlier failures in POS)
     upsert("4000", "Sales Revenue")

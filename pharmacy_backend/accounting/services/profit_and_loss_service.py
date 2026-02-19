@@ -22,15 +22,14 @@ Key rules:
 
 from __future__ import annotations
 
-from datetime import datetime, date
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
 
-from django.db.models import Sum, Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 
-from accounting.models.ledger import LedgerEntry
 from accounting.models.account import Account
-
+from accounting.models.ledger import LedgerEntry
 
 TWOPLACES = Decimal("0.01")
 
@@ -66,13 +65,9 @@ def get_profit_and_loss(*, chart=None, start_date=None, end_date=None):
     start_dt = _as_aware_dt(start_date)
     end_dt = _as_aware_dt(end_date)
 
-    qs = (
-        LedgerEntry.objects
-        .select_related("account", "journal_entry")
-        .filter(
-            journal_entry__is_posted=True,
-            account__is_active=True,
-        )
+    qs = LedgerEntry.objects.select_related("account", "journal_entry").filter(
+        journal_entry__is_posted=True,
+        account__is_active=True,
     )
 
     if chart is not None:
@@ -84,18 +79,14 @@ def get_profit_and_loss(*, chart=None, start_date=None, end_date=None):
     if end_dt:
         qs = qs.filter(journal_entry__posted_at__lte=end_dt)
 
-    income_totals = qs.filter(
-        account__account_type=Account.REVENUE
-    ).aggregate(
+    income_totals = qs.filter(account__account_type=Account.REVENUE).aggregate(
         credits=Sum("amount", filter=Q(entry_type=LedgerEntry.CREDIT)),
         debits=Sum("amount", filter=Q(entry_type=LedgerEntry.DEBIT)),
     )
 
     total_income = _q2(income_totals["credits"]) - _q2(income_totals["debits"])
 
-    expense_totals = qs.filter(
-        account__account_type=Account.EXPENSE
-    ).aggregate(
+    expense_totals = qs.filter(account__account_type=Account.EXPENSE).aggregate(
         debits=Sum("amount", filter=Q(entry_type=LedgerEntry.DEBIT)),
         credits=Sum("amount", filter=Q(entry_type=LedgerEntry.CREDIT)),
     )

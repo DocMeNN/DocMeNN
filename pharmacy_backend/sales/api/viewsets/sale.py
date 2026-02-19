@@ -41,40 +41,37 @@ from __future__ import annotations
 from datetime import datetime
 
 from django.db.models import Q
-from rest_framework import viewsets, status, serializers
+from drf_spectacular.utils import extend_schema
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema
 
 from permissions.roles import (
-    HasAnyCapability,
-    CAP_REPORTS_VIEW_POS,
     CAP_REPORTS_VIEW_ACCOUNTING,
+    CAP_REPORTS_VIEW_POS,
+    HasAnyCapability,
 )
-
-from store.models import Store
 from pos.models import Cart
 from sales.models import Sale
 from sales.serializers.sale import SaleSerializer
-
 from sales.services.checkout_orchestrator import (
-    checkout_cart,
+    AccountingPostingError,
+    CheckoutError,
     EmptyCartError,
     StockValidationError,
-    CheckoutError,
-    AccountingPostingError,
+    checkout_cart,
 )
-
 from sales.services.refund_orchestrator import (
-    refund_sale_with_stock_restoration,
     RefundOrchestratorError,
+    refund_sale_with_stock_restoration,
 )
-
+from store.models import Store
 
 # ==========================================================
 # CHECKOUT INPUT (STAFF)
 # ==========================================================
+
 
 class PaymentAllocationInputSerializer(serializers.Serializer):
     method = serializers.ChoiceField(
@@ -103,6 +100,7 @@ class CheckoutInputSerializer(serializers.Serializer):
 # REFUND INPUT
 # ==========================================================
 
+
 class RefundLineSerializer(serializers.Serializer):
     sale_item_id = serializers.CharField(required=True)
     quantity = serializers.IntegerField(min_value=1, required=True)
@@ -116,6 +114,7 @@ class RefundInputSerializer(serializers.Serializer):
 # ==========================================================
 # VIEWSET
 # ==========================================================
+
 
 class SaleViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = SaleSerializer
@@ -305,7 +304,11 @@ class SaleViewSet(viewsets.ReadOnlyModelViewSet):
             audit = getattr(refunded_sale, "refund_audit", None)
             refund_no = None
             if audit:
-                refund_no = getattr(audit, "refund_no", None) or str(getattr(audit, "id", "")) or None
+                refund_no = (
+                    getattr(audit, "refund_no", None)
+                    or str(getattr(audit, "id", ""))
+                    or None
+                )
 
             return Response(
                 {

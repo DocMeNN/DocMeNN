@@ -16,19 +16,18 @@ IMPORTANT:
 - The accounting engine (create_journal_entry) enforces balancing + idempotency.
 """
 
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from accounting.services.account_resolver import (
-    get_cash_account,
-    get_bank_account,
     get_accounts_receivable_account,
-    get_sales_revenue_account,
+    get_bank_account,
+    get_cash_account,
     get_sales_discount_account,
+    get_sales_revenue_account,
     get_vat_payable_account,
 )
 from accounting.services.exceptions import PostingRuleError
 from accounting.services.journal_entry_service import create_journal_entry
-
 
 TWOPLACES = Decimal("0.01")
 

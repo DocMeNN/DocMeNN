@@ -2,33 +2,29 @@
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-
-from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.parsers import JSONParser
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
+from rest_framework.views import APIView
 
-from drf_spectacular.utils import extend_schema, OpenApiResponse
-
-from store.models import Store
 from products.models import Product, StockBatch
-from sales.models import OnlineOrder, OnlineOrderItem, PaymentAttempt
-
 from public.serializers import (
-    PublicOrderInitiateSerializer,
     PublicOrderInitiateResponseSerializer,
+    PublicOrderInitiateSerializer,
     PublicOrderStatusResponseSerializer,
 )
-
 from public.services.paystack import paystack_initialize_transaction
+from sales.models import OnlineOrder, OnlineOrderItem, PaymentAttempt
+from store.models import Store
 
 TWOPLACES = Decimal("0.01")
 
@@ -38,6 +34,7 @@ class PublicWriteThrottle(AnonRateThrottle):
     For public write endpoints (initiate checkout, legacy checkout).
     Uses REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['public_write'].
     """
+
     scope = "public_write"
 
 
@@ -46,6 +43,7 @@ class PublicPollThrottle(AnonRateThrottle):
     For public polling endpoints (order status).
     Uses REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['public_poll'].
     """
+
     scope = "public_poll"
 
 
@@ -135,7 +133,9 @@ class PublicOrderInitiateView(APIView):
 
         items = data.get("items") or []
         if not items:
-            return Response({"detail": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         order = _safe_create(
             OnlineOrder,
@@ -157,11 +157,17 @@ class PublicOrderInitiateView(APIView):
 
             p_store_id = getattr(product, "store_id", None)
             if p_store_id and str(p_store_id) != str(store.id):
-                return Response({"detail": "Product belongs to a different store."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": "Product belongs to a different store."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             qty = int(line["quantity"])
             if qty <= 0:
-                return Response({"detail": "quantity must be >= 1"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": "quantity must be >= 1"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             available = _available_stock_for_product(product=product, store=store)
             if available < qty:
@@ -234,7 +240,10 @@ class PublicOrderInitiateView(APIView):
             )
             if touched:
                 attempt.save(update_fields=touched)
-            return Response({"detail": f"Payment provider init failed: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+            return Response(
+                {"detail": f"Payment provider init failed: {exc}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
 
         authorization_url = str(init.get("authorization_url") or "").strip()
 
@@ -268,7 +277,10 @@ class PublicOrderStatusView(APIView):
 
     @extend_schema(
         tags=["Public"],
-        responses={200: PublicOrderStatusResponseSerializer, 429: OpenApiResponse(description="Rate limited")},
+        responses={
+            200: PublicOrderStatusResponseSerializer,
+            429: OpenApiResponse(description="Rate limited"),
+        },
     )
     def get(self, request, order_id, *args, **kwargs):
         order = get_object_or_404(OnlineOrder, id=order_id)

@@ -1,15 +1,15 @@
 # store/view.py
 
-from django.shortcuts import render
 
 # Create your views here.
-from rest_framework import generics, status, permissions
+from rest_framework import generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Order, OrderItem
-from .serializers import OrderSerializer, OrderItemSerializer
 from products.models import Product
+
+from .models import Order, OrderItem
+from .serializers import OrderItemSerializer, OrderSerializer
 
 
 # -----------------------------
@@ -21,11 +21,9 @@ class IsAdminOrOwner(permissions.BasePermission):
     - Admins (staff)
     - The owner of the order
     """
+
     def has_object_permission(self, request, view, obj):
-        return (
-            request.user.is_staff or
-            obj.customer == request.user
-        )
+        return request.user.is_staff or obj.customer == request.user
 
 
 # -----------------------------
@@ -38,8 +36,8 @@ class OrderListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         user = self.request.user
         if user.is_staff:
-            return Order.objects.all().order_by('-created_at')
-        return Order.objects.filter(customer=user).order_by('-created_at')
+            return Order.objects.all().order_by("-created_at")
+        return Order.objects.filter(customer=user).order_by("-created_at")
 
     def perform_create(self, serializer):
         serializer.save(customer=self.request.user)

@@ -15,20 +15,18 @@ Security:
 - Phase 5: tenant safety (ENFORCED): user must be allowed for business_id (superuser override)
 """
 
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from drf_spectacular.utils import extend_schema
-
 from accounting.api.serializers.opening_balances import OpeningBalancesCreateSerializer
+from accounting.services.account_resolver import user_can_access_business
 from accounting.services.opening_balances_service import (
     OpeningBalancesError,
     create_opening_balances,
 )
-from accounting.services.account_resolver import user_can_access_business
-
 
 OPENING_BALANCE_PERMISSION = "accounting.add_journalentry"
 
@@ -59,7 +57,9 @@ class OpeningBalancesCreateView(GenericAPIView):
         # ✅ Tenant isolation (Phase 5 final lock)
         if not user_can_access_business(request.user, business_id):
             return Response(
-                {"detail": "You are not allowed to post opening balances for this business."},
+                {
+                    "detail": "You are not allowed to post opening balances for this business."
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -78,7 +78,9 @@ class OpeningBalancesCreateView(GenericAPIView):
                 "id": str(journal_entry.id),
                 "description": getattr(journal_entry, "description", ""),
                 "reference": reference,
-                "posted_at": journal_entry.posted_at.isoformat() if journal_entry.posted_at else None,
+                "posted_at": journal_entry.posted_at.isoformat()
+                if journal_entry.posted_at
+                else None,
                 "is_posted": bool(getattr(journal_entry, "is_posted", True)),
             },
             status=status.HTTP_201_CREATED,

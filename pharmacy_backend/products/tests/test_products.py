@@ -2,8 +2,8 @@
 
 from decimal import Decimal
 
-from django.test import TestCase
 from django.db import IntegrityError
+from django.test import TestCase
 
 from products.models import Product
 

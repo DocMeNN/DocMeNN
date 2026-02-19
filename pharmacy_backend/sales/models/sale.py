@@ -3,8 +3,8 @@
 import uuid
 from decimal import Decimal
 
-from django.db import models
 from django.conf import settings
+from django.db import models
 from django.utils import timezone
 
 User = settings.AUTH_USER_MODEL
@@ -65,10 +65,18 @@ class Sale(models.Model):
         help_text="Cashier / staff who processed the sale",
     )
 
-    subtotal_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    subtotal_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    tax_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    discount_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    total_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
 
     cogs_amount = models.DecimalField(
         max_digits=12,
@@ -127,7 +135,10 @@ class Sale(models.Model):
         if not self._is_financially_locked(previous):
             return
 
-        if previous.status == self.STATUS_COMPLETED and self.status == self.STATUS_REFUNDED:
+        if (
+            previous.status == self.STATUS_COMPLETED
+            and self.status == self.STATUS_REFUNDED
+        ):
             pass
         else:
             if self.status != previous.status:
@@ -157,7 +168,9 @@ class Sale(models.Model):
             self.completed_at = timezone.now()
 
         try:
-            self.gross_profit_amount = (Decimal(self.subtotal_amount) - Decimal(self.cogs_amount))
+            self.gross_profit_amount = Decimal(self.subtotal_amount) - Decimal(
+                self.cogs_amount
+            )
         except Exception:
             pass
 

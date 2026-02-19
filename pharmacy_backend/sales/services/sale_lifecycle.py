@@ -13,10 +13,10 @@ DESIGN PRINCIPLES:
 
 from sales.models import Sale
 
-
 # ============================================================
 # DOMAIN ERRORS
 # ============================================================
+
 
 class SaleLifecycleError(Exception):
     pass
@@ -44,6 +44,7 @@ ALLOWED_TRANSITIONS = {
 # ============================================================
 # DOMAIN RULES
 # ============================================================
+
 
 def can_transition(*, from_status: str, to_status: str) -> bool:
     if from_status in TERMINAL_STATES:

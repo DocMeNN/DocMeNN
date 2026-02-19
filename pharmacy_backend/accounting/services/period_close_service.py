@@ -19,24 +19,23 @@ Guarantees:
 from __future__ import annotations
 
 from datetime import datetime, time
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import Sum, Case, When, F
+from django.db.models import Case, F, Sum, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from accounting.models.account import Account
 from accounting.models.ledger import LedgerEntry
 from accounting.models.period_close import PeriodClose
-
 from accounting.services.account_resolver import get_active_chart
-from accounting.services.journal_entry_service import create_journal_entry
 from accounting.services.exceptions import (
     AccountResolutionError,
-    JournalEntryCreationError,
     IdempotencyError,
+    JournalEntryCreationError,
 )
+from accounting.services.journal_entry_service import create_journal_entry
 
 TWOPLACES = Decimal("0.01")
 
@@ -116,7 +115,9 @@ def _validate_period_dates(*, start_date, end_date) -> None:
 
     today = timezone.localdate()
     if end_date > today:
-        raise PeriodCloseError(f"Cannot close a future period. end_date={end_date} today={today}")
+        raise PeriodCloseError(
+            f"Cannot close a future period. end_date={end_date} today={today}"
+        )
 
 
 def _ensure_no_overlap(*, chart, start_date, end_date) -> None:
@@ -156,8 +157,12 @@ def close_period(
 
     chart = get_active_chart()
 
-    if PeriodClose.objects.filter(chart=chart, start_date=start_date, end_date=end_date).exists():
-        raise PeriodCloseError("This period has already been closed for the active chart")
+    if PeriodClose.objects.filter(
+        chart=chart, start_date=start_date, end_date=end_date
+    ).exists():
+        raise PeriodCloseError(
+            "This period has already been closed for the active chart"
+        )
 
     _ensure_no_overlap(chart=chart, start_date=start_date, end_date=end_date)
 
@@ -166,38 +171,33 @@ def close_period(
         override_code=retained_earnings_account_code,
     )
 
-    base_qs = (
-        LedgerEntry.objects.select_related("account", "journal_entry")
-        .filter(
-            account__chart=chart,
-            account__is_active=True,
-            journal_entry__is_posted=True,
-            journal_entry__posted_at__date__gte=start_date,
-            journal_entry__posted_at__date__lte=end_date,
-            account__account_type__in=[Account.REVENUE, Account.EXPENSE],
-        )
+    base_qs = LedgerEntry.objects.select_related("account", "journal_entry").filter(
+        account__chart=chart,
+        account__is_active=True,
+        journal_entry__is_posted=True,
+        journal_entry__posted_at__date__gte=start_date,
+        journal_entry__posted_at__date__lte=end_date,
+        account__account_type__in=[Account.REVENUE, Account.EXPENSE],
     )
 
     if not base_qs.exists():
         raise PeriodCloseError("No revenue/expense activity found in this period")
 
-    per_account = (
-        base_qs.values("account_id", "account__account_type")
-        .annotate(
-            debit_total=Coalesce(
-                Sum(Case(When(entry_type=LedgerEntry.DEBIT, then=F("amount")))),
-                Decimal("0.00"),
-            ),
-            credit_total=Coalesce(
-                Sum(Case(When(entry_type=LedgerEntry.CREDIT, then=F("amount")))),
-                Decimal("0.00"),
-            ),
-        )
+    per_account = base_qs.values("account_id", "account__account_type").annotate(
+        debit_total=Coalesce(
+            Sum(Case(When(entry_type=LedgerEntry.DEBIT, then=F("amount")))),
+            Decimal("0.00"),
+        ),
+        credit_total=Coalesce(
+            Sum(Case(When(entry_type=LedgerEntry.CREDIT, then=F("amount")))),
+            Decimal("0.00"),
+        ),
     )
 
     account_ids = [row["account_id"] for row in per_account]
     accounts_by_id = {
-        a.id: a for a in Account.objects.filter(id__in=account_ids, chart=chart, is_active=True)
+        a.id: a
+        for a in Account.objects.filter(id__in=account_ids, chart=chart, is_active=True)
     }
 
     postings = []
@@ -220,28 +220,46 @@ def close_period(
         if acc_type == Account.REVENUE:
             net = (credit - debit).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
             if net > 0:
-                postings.append({"account": account, "debit": net, "credit": Decimal("0.00")})
+                postings.append(
+                    {"account": account, "debit": net, "credit": Decimal("0.00")}
+                )
                 total_revenue += net
 
         # Expense normally has debit balances; we CREDIT to zero it out.
         elif acc_type == Account.EXPENSE:
             net = (debit - credit).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
             if net > 0:
-                postings.append({"account": account, "debit": Decimal("0.00"), "credit": net})
+                postings.append(
+                    {"account": account, "debit": Decimal("0.00"), "credit": net}
+                )
                 total_expenses += net
 
     total_revenue = total_revenue.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
     total_expenses = total_expenses.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
-    net_profit = (total_revenue - total_expenses).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    net_profit = (total_revenue - total_expenses).quantize(
+        TWOPLACES, rounding=ROUND_HALF_UP
+    )
 
     if total_revenue == Decimal("0.00") and total_expenses == Decimal("0.00"):
         raise PeriodCloseError("Nothing to close: period revenue and expenses are zero")
 
     # Post net to retained earnings (profit => credit equity, loss => debit equity)
     if net_profit > Decimal("0.00"):
-        postings.append({"account": retained_earnings, "debit": Decimal("0.00"), "credit": net_profit})
+        postings.append(
+            {
+                "account": retained_earnings,
+                "debit": Decimal("0.00"),
+                "credit": net_profit,
+            }
+        )
     elif net_profit < Decimal("0.00"):
-        postings.append({"account": retained_earnings, "debit": abs(net_profit), "credit": Decimal("0.00")})
+        postings.append(
+            {
+                "account": retained_earnings,
+                "debit": abs(net_profit),
+                "credit": Decimal("0.00"),
+            }
+        )
 
     ref_id = f"{chart.id}:{start_date.isoformat()}:{end_date.isoformat()}"
     description = f"Period Close {start_date.isoformat()} → {end_date.isoformat()}"

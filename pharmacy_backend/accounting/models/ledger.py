@@ -82,14 +82,18 @@ class LedgerEntry(models.Model):
             raise ValidationError("Invalid entry_type")
 
         if self.journal_entry_id and not getattr(self.journal_entry, "is_posted", True):
-            raise ValidationError("Ledger entries can only reference posted journal entries")
+            raise ValidationError(
+                "Ledger entries can only reference posted journal entries"
+            )
 
         if self.amount is None or self.amount <= 0:
             raise ValidationError("Ledger amount must be > 0")
 
     def save(self, *args, **kwargs):
         if self.pk:
-            raise ValidationError("LedgerEntry records are immutable and cannot be modified")
+            raise ValidationError(
+                "LedgerEntry records are immutable and cannot be modified"
+            )
 
         self.full_clean()
         return super().save(*args, **kwargs)

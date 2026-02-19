@@ -18,9 +18,9 @@ Therefore tests MUST seed:
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, timedelta
 from decimal import Decimal
-import uuid
 
 from django.apps import apps
 from django.contrib.auth import get_user_model
@@ -28,7 +28,6 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
-
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -42,6 +41,7 @@ User = get_user_model()
 # -----------------------------
 # User creation (CI-safe)
 # -----------------------------
+
 
 def _create_test_user(*, email: str, username: str, password: str):
     """
@@ -62,6 +62,7 @@ def _create_test_user(*, email: str, username: str, password: str):
 # Generic helpers (test seeding)
 # -----------------------------
 
+
 def _pick_choice_value(field):
     choices = getattr(field, "choices", None)
     if not choices:
@@ -69,10 +70,18 @@ def _pick_choice_value(field):
 
     first = choices[0]
     # flat: [(value, label), ...]
-    if isinstance(first, (list, tuple)) and len(first) == 2 and not isinstance(first[1], (list, tuple)):
+    if (
+        isinstance(first, (list, tuple))
+        and len(first) == 2
+        and not isinstance(first[1], (list, tuple))
+    ):
         return first[0]
     # grouped: [(group, [(value,label), ...]), ...]
-    if isinstance(first, (list, tuple)) and len(first) == 2 and isinstance(first[1], (list, tuple)):
+    if (
+        isinstance(first, (list, tuple))
+        and len(first) == 2
+        and isinstance(first[1], (list, tuple))
+    ):
         inner = first[1]
         if inner and isinstance(inner[0], (list, tuple)) and len(inner[0]) == 2:
             return inner[0][0]
@@ -88,11 +97,15 @@ def _default_for_field(field):
 
     if isinstance(field, models.BooleanField):
         return True
-    if isinstance(field, (models.IntegerField, models.BigIntegerField, models.SmallIntegerField)):
+    if isinstance(
+        field, (models.IntegerField, models.BigIntegerField, models.SmallIntegerField)
+    ):
         return 1
     if isinstance(field, models.DecimalField):
         return Decimal("0.00")
-    if isinstance(field, models.DateField) and not isinstance(field, models.DateTimeField):
+    if isinstance(field, models.DateField) and not isinstance(
+        field, models.DateTimeField
+    ):
         return date.today()
     if isinstance(field, models.DateTimeField):
         return timezone.now()
@@ -125,7 +138,9 @@ def _create_chart_with_retries(ChartOfAccounts):
     for fname, field in fields.items():
         if fname in payload:
             continue
-        if getattr(field, "primary_key", False) or getattr(field, "auto_created", False):
+        if getattr(field, "primary_key", False) or getattr(
+            field, "auto_created", False
+        ):
             continue
         if hasattr(field, "has_default") and field.has_default():
             continue
@@ -184,7 +199,11 @@ def _find_chart_account_model(ChartOfAccounts):
             continue
 
         for f in m._meta.fields:
-            if f.is_relation and getattr(f, "many_to_one", False) and getattr(f.remote_field, "model", None) == ChartOfAccounts:
+            if (
+                f.is_relation
+                and getattr(f, "many_to_one", False)
+                and getattr(f.remote_field, "model", None) == ChartOfAccounts
+            ):
                 candidates.append((m, f.name))
                 break
 
@@ -211,7 +230,9 @@ def _ensure_chart_accounts(chart):
     fields = {f.name: f for f in AccountModel._meta.fields}
 
     def upsert(code: str, name: str):
-        qs = AccountModel.objects.filter(code=str(code)).filter(**{chart_fk_field: chart})
+        qs = AccountModel.objects.filter(code=str(code)).filter(
+            **{chart_fk_field: chart}
+        )
         obj = qs.first()
         if obj:
             if "is_active" in fields and getattr(obj, "is_active", True) is not True:
@@ -228,7 +249,9 @@ def _ensure_chart_accounts(chart):
         for fname, field in fields.items():
             if fname in payload:
                 continue
-            if getattr(field, "primary_key", False) or getattr(field, "auto_created", False):
+            if getattr(field, "primary_key", False) or getattr(
+                field, "auto_created", False
+            ):
                 continue
             if hasattr(field, "has_default") and field.has_default():
                 continue
@@ -266,7 +289,9 @@ def _ensure_chart_accounts(chart):
                     else:
                         raise
 
-        raise ValidationError(f"Unable to create required account code={code} for tests.")
+        raise ValidationError(
+            f"Unable to create required account code={code} for tests."
+        )
 
     # Required by failures so far:
     upsert("4000", "Sales Revenue")
@@ -284,6 +309,7 @@ def _ensure_chart_accounts(chart):
 
 def _ensure_active_chart_of_accounts():
     from accounting.models.chart import ChartOfAccounts
+
     chart = _create_chart_with_retries(ChartOfAccounts)
     _ensure_chart_accounts(chart)
     return chart
@@ -292,6 +318,7 @@ def _ensure_active_chart_of_accounts():
 # -----------------------------
 # Tests
 # -----------------------------
+
 
 class POSBaseTestCase(TestCase):
     def setUp(self):
@@ -350,7 +377,9 @@ class POSCartTests(POSBaseTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["items"]), 1)
         self.assertEqual(response.data["items"][0]["quantity"], 2)
-        self.assertEqual(Decimal(response.data["items"][0]["unit_price"]), Decimal("100.00"))
+        self.assertEqual(
+            Decimal(response.data["items"][0]["unit_price"]), Decimal("100.00")
+        )
 
 
 class POSCheckoutTests(POSBaseTestCase):

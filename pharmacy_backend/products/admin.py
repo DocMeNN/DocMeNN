@@ -35,13 +35,13 @@ from django.core.exceptions import ValidationError
 from django.forms.models import BaseInlineFormSet
 from django.utils import timezone
 
-from products.models import Product, Category, StockBatch
+from products.models import Category, Product, StockBatch
 from products.services.stock_intake import intake_stock
-
 
 # =====================================================
 # HELPERS
 # =====================================================
+
 
 def _is_persisted_stockbatch(inst: StockBatch | None) -> bool:
     """
@@ -83,6 +83,7 @@ def _is_blank_new_row(cd: dict) -> bool:
 # CATEGORY
 # =====================================================
 
+
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ("name",)
@@ -93,6 +94,7 @@ class CategoryAdmin(admin.ModelAdmin):
 # =====================================================
 # INLINE FORMSET (VALIDATION LIVES HERE)
 # =====================================================
+
 
 class StockBatchInlineFormSet(BaseInlineFormSet):
     """
@@ -111,7 +113,9 @@ class StockBatchInlineFormSet(BaseInlineFormSet):
         # Parent Product must have store selected (your service requires it)
         store_id = getattr(parent_product, "store_id", None)
         if not store_id:
-            raise ValidationError("Select a Store on the Product before adding stock batches.")
+            raise ValidationError(
+                "Select a Store on the Product before adding stock batches."
+            )
 
         any_errors = False
 
@@ -122,7 +126,9 @@ class StockBatchInlineFormSet(BaseInlineFormSet):
 
             # Block deletions (audit safety)
             if cd.get("DELETE"):
-                form.add_error(None, "Stock batches are audit artifacts and cannot be deleted.")
+                form.add_error(
+                    None, "Stock batches are audit artifacts and cannot be deleted."
+                )
                 any_errors = True
                 continue
 
@@ -147,7 +153,9 @@ class StockBatchInlineFormSet(BaseInlineFormSet):
             # Required: expiry_date
             expiry_date = cd.get("expiry_date")
             if not expiry_date:
-                form.add_error("expiry_date", "expiry_date is required for stock intake.")
+                form.add_error(
+                    "expiry_date", "expiry_date is required for stock intake."
+                )
                 any_errors = True
 
             # Required: quantity_received (int > 0)
@@ -159,10 +167,14 @@ class StockBatchInlineFormSet(BaseInlineFormSet):
                 try:
                     qty_int = int(qty)
                     if qty_int <= 0:
-                        form.add_error("quantity_received", "quantity_received must be > 0.")
+                        form.add_error(
+                            "quantity_received", "quantity_received must be > 0."
+                        )
                         any_errors = True
                 except Exception:
-                    form.add_error("quantity_received", "quantity_received must be a whole number.")
+                    form.add_error(
+                        "quantity_received", "quantity_received must be a whole number."
+                    )
                     any_errors = True
 
             # Required: unit_cost (Decimal > 0)
@@ -204,6 +216,7 @@ class StockBatchInlineFormSet(BaseInlineFormSet):
 # =====================================================
 # STOCK BATCH INLINE
 # =====================================================
+
 
 class StockBatchInline(admin.TabularInline):
     """
@@ -249,6 +262,7 @@ class StockBatchInline(admin.TabularInline):
 # =====================================================
 # PRODUCT
 # =====================================================
+
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
@@ -311,7 +325,8 @@ class ProductAdmin(admin.ModelAdmin):
                 expiry_date=expiry_date,
                 batch_number=batch_number,
                 user=request.user,
-                store=getattr(parent_product, "store", None) or getattr(parent_product, "store_id", None),
+                store=getattr(parent_product, "store", None)
+                or getattr(parent_product, "store_id", None),
                 update_product_price=False,
             )
             created_batches.append(batch)
@@ -328,6 +343,7 @@ class ProductAdmin(admin.ModelAdmin):
 # =====================================================
 # STOCK BATCH (VIEW-ONLY LIST)
 # =====================================================
+
 
 @admin.register(StockBatch)
 class StockBatchAdmin(admin.ModelAdmin):

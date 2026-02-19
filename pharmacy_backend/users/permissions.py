@@ -13,11 +13,7 @@ class HasRole(BasePermission):
 
     def has_permission(self, request, view):
         user = request.user
-        return (
-            user
-            and user.is_authenticated
-            and user.role in self.allowed_roles
-        )
+        return user and user.is_authenticated and user.role in self.allowed_roles
 
 
 # ---------------- ROLE PERMISSIONS ----------------
@@ -45,6 +41,7 @@ class IsStaff(HasRole):
     - cashier
     - reception
     """
+
     allowed_roles = {"admin", "pharmacist", "cashier", "reception"}
 
 

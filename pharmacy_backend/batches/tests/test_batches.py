@@ -1,5 +1,4 @@
 from django.test import TestCase
-from batches.models import Batch
 
 
 class BatchModelTest(TestCase):

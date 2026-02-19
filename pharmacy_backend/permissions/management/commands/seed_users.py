@@ -11,12 +11,12 @@ from django.db import transaction
 
 from permissions.roles import (
     BUSINESS_PHARMACY,
-    BUSINESS_SUPERMARKET,
     BUSINESS_RETAIL,
+    BUSINESS_SUPERMARKET,
     BUSINESS_TYPES,
     ROLE_ADMIN,
-    ROLE_MANAGER,
     ROLE_CASHIER,
+    ROLE_MANAGER,
     ROLE_PHARMACIST,
     ROLE_RECEPTION,
 )
@@ -97,11 +97,15 @@ def _upsert_user(
         user.role = spec.role
         dirty = True
 
-    if _model_has_field(User, "is_staff") and getattr(user, "is_staff", None) != bool(is_staff):
+    if _model_has_field(User, "is_staff") and getattr(user, "is_staff", None) != bool(
+        is_staff
+    ):
         user.is_staff = bool(is_staff)
         dirty = True
 
-    if _model_has_field(User, "is_superuser") and getattr(user, "is_superuser", None) != bool(is_superuser):
+    if _model_has_field(User, "is_superuser") and getattr(
+        user, "is_superuser", None
+    ) != bool(is_superuser):
         user.is_superuser = bool(is_superuser)
         dirty = True
 
@@ -127,9 +131,13 @@ def _user_specs_for_business(business_type: str) -> list[SeedUserSpec]:
         return [
             SeedUserSpec("Admin", ROLE_ADMIN, "admin", "admin@example.com"),
             SeedUserSpec("Manager", ROLE_MANAGER, "manager", "manager@example.com"),
-            SeedUserSpec("Pharmacist", ROLE_PHARMACIST, "pharmacist", "pharmacist@example.com"),
+            SeedUserSpec(
+                "Pharmacist", ROLE_PHARMACIST, "pharmacist", "pharmacist@example.com"
+            ),
             SeedUserSpec("Cashier", ROLE_CASHIER, "cashier", "cashier@example.com"),
-            SeedUserSpec("Reception", ROLE_RECEPTION, "reception", "reception@example.com"),
+            SeedUserSpec(
+                "Reception", ROLE_RECEPTION, "reception", "reception@example.com"
+            ),
         ]
 
     if business_type in {BUSINESS_SUPERMARKET, BUSINESS_RETAIL}:
@@ -144,7 +152,9 @@ def _user_specs_for_business(business_type: str) -> list[SeedUserSpec]:
 
 
 class Command(BaseCommand):
-    help = "Seed staff users (business-aware: pharmacy vs supermarket vs general retail)."
+    help = (
+        "Seed staff users (business-aware: pharmacy vs supermarket vs general retail)."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -215,4 +225,6 @@ class Command(BaseCommand):
         if force_password:
             self.stdout.write(f"Passwords reset: {updated_count}")
         self.stdout.write("\nLogin usernames/emails depend on your User model fields.")
-        self.stdout.write("Default seeded accounts use: admin / manager / cashier (+ pharmacist/reception in pharmacy).")
+        self.stdout.write(
+            "Default seeded accounts use: admin / manager / cashier (+ pharmacist/reception in pharmacy)."
+        )

@@ -4,35 +4,32 @@ from __future__ import annotations
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-
-from rest_framework import generics, status, serializers
+from rest_framework import generics, serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from permissions.roles import (
-    IsPharmacist,
     IsCashier,
+    IsPharmacist,
     IsReception,
     IsStaff,
 )
-
 from pos.models import Cart, CartItem
 from pos.serializers import CartSerializer  # ✅ use your current CartSerializer
-from store.models import Store
 from products.models import Product
-
+from sales.serializers import SaleSerializer
 from sales.services.checkout_orchestrator import (
-    checkout_cart,
+    AccountingPostingError,
     EmptyCartError,
     StockValidationError,
-    AccountingPostingError,
+    checkout_cart,
 )
-from sales.serializers import SaleSerializer
-
+from store.models import Store
 
 # ============================================================
 # INPUT SERIALIZERS (for validation)
 # ============================================================
+
 
 class AddToCartInputSerializer(serializers.Serializer):
     store_id = serializers.UUIDField()
@@ -42,12 +39,15 @@ class AddToCartInputSerializer(serializers.Serializer):
 
 class CheckoutInputSerializer(serializers.Serializer):
     store_id = serializers.UUIDField()
-    payment_method = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    payment_method = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
 
 
 # ============================================================
 # HELPERS
 # ============================================================
+
 
 def _resolve_store(*, store_id):
     return get_object_or_404(Store, id=store_id, is_active=True)
@@ -80,6 +80,7 @@ def _assert_product_belongs_to_store(*, product: Product, store: Store):
 # VIEW CART
 # ============================================================
 
+
 class POSCartView(generics.GenericAPIView):
     """
     GET active POS cart (store-scoped)
@@ -107,6 +108,7 @@ class POSCartView(generics.GenericAPIView):
 # ============================================================
 # ADD TO CART
 # ============================================================
+
 
 class AddToCartView(generics.GenericAPIView):
     """
@@ -163,6 +165,7 @@ class AddToCartView(generics.GenericAPIView):
 # REMOVE FROM CART
 # ============================================================
 
+
 class RemoveFromCartView(generics.DestroyAPIView):
     """
     Remove item from active POS cart (store-scoped)
@@ -192,6 +195,7 @@ class RemoveFromCartView(generics.DestroyAPIView):
 # ============================================================
 # CHECKOUT
 # ============================================================
+
 
 class CheckoutView(generics.GenericAPIView):
     """

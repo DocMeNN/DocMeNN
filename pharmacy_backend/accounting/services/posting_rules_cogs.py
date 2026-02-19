@@ -19,16 +19,15 @@ This module:
 
 from decimal import Decimal
 
+from accounting.models.account import Account
 from accounting.services.account_resolver import (
     get_active_chart,
-    AccountResolutionError,
 )
-from accounting.models.account import Account
-
 
 # ============================================================
 # DOMAIN ERRORS
 # ============================================================
+
 
 class COGSPostingError(Exception):
     """Raised when COGS posting rules cannot be resolved"""
@@ -37,6 +36,7 @@ class COGSPostingError(Exception):
 # ============================================================
 # ACCOUNT RESOLUTION
 # ============================================================
+
 
 def get_cogs_expense_account() -> Account:
     """
@@ -75,6 +75,7 @@ def get_inventory_asset_account() -> Account:
 # ============================================================
 # POSTING RULE
 # ============================================================
+
 
 def build_cogs_posting(amount: Decimal) -> list[dict]:
     """

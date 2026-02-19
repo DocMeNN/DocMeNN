@@ -1,6 +1,7 @@
 # accounting/api/serializers/expenses.py
 
 from rest_framework import serializers
+
 from accounting.models.expense import Expense
 
 
@@ -8,11 +9,22 @@ class ExpenseSerializer(serializers.ModelSerializer):
     """
     Output serializer (DB truth) - clean, stable contract.
     """
-    expense_account_code = serializers.CharField(source="expense_account.code", read_only=True)
-    expense_account_name = serializers.CharField(source="expense_account.name", read_only=True)
-    payment_account_code = serializers.CharField(source="payment_account.code", read_only=True)
-    payment_account_name = serializers.CharField(source="payment_account.name", read_only=True)
-    posted_journal_entry_id = serializers.UUIDField(source="posted_journal_entry.id", read_only=True)
+
+    expense_account_code = serializers.CharField(
+        source="expense_account.code", read_only=True
+    )
+    expense_account_name = serializers.CharField(
+        source="expense_account.name", read_only=True
+    )
+    payment_account_code = serializers.CharField(
+        source="payment_account.code", read_only=True
+    )
+    payment_account_name = serializers.CharField(
+        source="payment_account.name", read_only=True
+    )
+    posted_journal_entry_id = serializers.UUIDField(
+        source="posted_journal_entry.id", read_only=True
+    )
 
     class Meta:
         model = Expense
@@ -47,12 +59,15 @@ class ExpenseCreateSerializer(serializers.Serializer):
     """
     Input serializer (Swagger-visible).
     """
+
     expense_date = serializers.DateField(required=False)
     amount = serializers.DecimalField(max_digits=14, decimal_places=2)
     expense_account_code = serializers.CharField()
 
     payment_method = serializers.ChoiceField(choices=["cash", "bank", "credit"])
-    payable_account_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    payable_account_code = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
 
     vendor = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     narration = serializers.CharField(required=False, allow_blank=True, allow_null=True)

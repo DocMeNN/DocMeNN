@@ -30,7 +30,9 @@ class JournalEntry(models.Model):
         help_text="External reference (POS sale ID, refund ID, etc.)",
     )
 
-    description = models.TextField(help_text="Narrative description of the journal entry")
+    description = models.TextField(
+        help_text="Narrative description of the journal entry"
+    )
 
     posted_at = models.DateTimeField(
         default=timezone.now,
@@ -78,7 +80,9 @@ class JournalEntry(models.Model):
             raise ValidationError("Journal entry description is required")
 
         if self.posted_at and timezone.is_naive(self.posted_at):
-            self.posted_at = timezone.make_aware(self.posted_at, timezone.get_current_timezone())
+            self.posted_at = timezone.make_aware(
+                self.posted_at, timezone.get_current_timezone()
+            )
 
     def save(self, *args, **kwargs):
         if self.pk:
@@ -88,4 +92,6 @@ class JournalEntry(models.Model):
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        raise ValidationError("JournalEntry records are immutable and cannot be deleted")
+        raise ValidationError(
+            "JournalEntry records are immutable and cannot be deleted"
+        )

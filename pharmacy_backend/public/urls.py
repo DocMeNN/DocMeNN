@@ -33,8 +33,8 @@ from django.urls import path
 from public.views.catalog import PublicCatalogView
 from public.views.checkout import PublicCheckoutView, PublicReceiptView
 from public.views.order import PublicOrderInitiateView, PublicOrderStatusView
-from public.views.paystack_webhook import PaystackWebhookView
 from public.views.paystack_callback import PaystackCallbackView
+from public.views.paystack_webhook import PaystackWebhookView
 
 app_name = "public"
 
@@ -45,19 +45,37 @@ PUBLIC_LEGACY_CHECKOUT_ENABLED = bool(
 urlpatterns = [
     # Public catalog
     path("catalog/", PublicCatalogView.as_view(), name="public-catalog"),
-
     # Phase 4 (Safe flow)
-    path("order/initiate/", PublicOrderInitiateView.as_view(), name="public-order-initiate"),
-    path("order/<uuid:order_id>/", PublicOrderStatusView.as_view(), name="public-order-status"),
-
+    path(
+        "order/initiate/",
+        PublicOrderInitiateView.as_view(),
+        name="public-order-initiate",
+    ),
+    path(
+        "order/<uuid:order_id>/",
+        PublicOrderStatusView.as_view(),
+        name="public-order-status",
+    ),
     # Paystack
-    path("payments/paystack/webhook/", PaystackWebhookView.as_view(), name="paystack-webhook"),
-    path("payments/paystack/callback/", PaystackCallbackView.as_view(), name="paystack-callback"),
+    path(
+        "payments/paystack/webhook/",
+        PaystackWebhookView.as_view(),
+        name="paystack-webhook",
+    ),
+    path(
+        "payments/paystack/callback/",
+        PaystackCallbackView.as_view(),
+        name="paystack-callback",
+    ),
 ]
 
 # Legacy V1 (optional)
 if PUBLIC_LEGACY_CHECKOUT_ENABLED:
     urlpatterns = [
         path("checkout/", PublicCheckoutView.as_view(), name="public-checkout"),
-        path("receipt/<uuid:sale_id>/", PublicReceiptView.as_view(), name="public-receipt"),
+        path(
+            "receipt/<uuid:sale_id>/",
+            PublicReceiptView.as_view(),
+            name="public-receipt",
+        ),
     ] + urlpatterns

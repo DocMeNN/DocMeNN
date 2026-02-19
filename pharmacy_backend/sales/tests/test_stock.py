@@ -1,15 +1,14 @@
 # sales/tests/test_stock.py
 
+from decimal import Decimal
+
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
-from django.contrib.auth import get_user_model
-
-from decimal import Decimal
 
 from products.models import Product, StockBatch
 from products.models.stock_movement import StockMovement
 from products.services.stock_fifo import deduct_stock_fifo, restore_stock_from_sale
-
 from sales.models.sale import Sale
 from sales.models.sale_item import SaleItem
 

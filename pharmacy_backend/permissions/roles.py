@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Optional
 
 from rest_framework.permissions import BasePermission
-
 
 # =========================================================
 # ROLE CONSTANTS (STAFF JOB ROLES)
@@ -58,12 +57,12 @@ CAP_POS_VOID = "pos.void"
 CAP_REPORTS_VIEW_POS = "reports.view_pos"
 CAP_REPORTS_VIEW_ACCOUNTING = "reports.view_accounting"
 
-CAP_ACCOUNTING_POST = "accounting.post"       # opening balances, expenses, closing
-CAP_ACCOUNTING_CLOSE = "accounting.close"     # closing period, lock/unlock
+CAP_ACCOUNTING_POST = "accounting.post"  # opening balances, expenses, closing
+CAP_ACCOUNTING_CLOSE = "accounting.close"  # closing period, lock/unlock
 
 CAP_INVENTORY_VIEW = "inventory.view"
 CAP_INVENTORY_EDIT = "inventory.edit"
-CAP_INVENTORY_ADJUST = "inventory.adjust"     # sensitive manual adjustments
+CAP_INVENTORY_ADJUST = "inventory.adjust"  # sensitive manual adjustments
 
 CAP_PHARMACY_DISPENSE = "pharmacy.dispense"
 CAP_PHARMACY_CONTROLLED = "pharmacy.controlled"

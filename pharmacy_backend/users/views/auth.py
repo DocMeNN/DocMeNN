@@ -1,17 +1,16 @@
 from django.contrib.auth import authenticate
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
-from rest_framework import status, serializers
-
 from drf_spectacular.utils import extend_schema
+from rest_framework import serializers, status
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from users.models import User
-
 
 # ---------------------------
 # SERIALIZERS (LOCAL, SIMPLE)
 # ---------------------------
+
 
 class RegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -36,6 +35,7 @@ class LoginResponseSerializer(serializers.Serializer):
 # ---------------------------
 # VIEWS
 # ---------------------------
+
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]

@@ -34,12 +34,11 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from django.core.exceptions import ObjectDoesNotExist, MultipleObjectsReturned
+from django.core.exceptions import MultipleObjectsReturned, ObjectDoesNotExist
 
 from accounting.models.account import Account
 from accounting.models.chart import ChartOfAccounts
 from accounting.services.exceptions import AccountResolutionError
-
 
 # ------------------------------------------------------------
 # SEMANTIC CODES BY CHART KEY
@@ -58,7 +57,6 @@ CHART_CODE_MAP = {
         "SALES_DISCOUNT": "4050",
         "COGS": "5000",
     },
-
     # -------- General Retail --------
     "General Retail": {
         "CASH": "1000",
@@ -71,7 +69,6 @@ CHART_CODE_MAP = {
         "SALES_DISCOUNT": "4050",
         "COGS": "5000",
     },
-
     # -------- Supermarket --------
     "Supermarket": {
         "CASH": "1000",
@@ -110,8 +107,8 @@ def _chart_match_keys(chart: ChartOfAccounts) -> list[str]:
 
     name = getattr(chart, "name", None)
     if name:
-        keys.append(str(name))          # exact
-        keys.append(_norm(name))        # normalized
+        keys.append(str(name))  # exact
+        keys.append(_norm(name))  # normalized
 
     # Optional identifiers (safe if fields don't exist)
     for attr in ("business_type", "slug", "code"):
@@ -157,6 +154,7 @@ def _has_chart_field(field_name: str) -> bool:
 # ACTIVE CHART (BACKWARD COMPAT)
 # ------------------------------------------------------------
 
+
 @lru_cache(maxsize=1)
 def get_active_chart() -> ChartOfAccounts:
     """
@@ -189,6 +187,7 @@ def get_active_chart_signature() -> str:
 # ------------------------------------------------------------
 # PHASE 5: TENANT SAFETY HELPERS (BEST-EFFORT)
 # ------------------------------------------------------------
+
 
 def get_chart_for_business(business_id: int) -> ChartOfAccounts:
     """
@@ -226,7 +225,9 @@ def get_chart_for_business(business_id: int) -> ChartOfAccounts:
 
     chart = qs.first()
     if not chart:
-        raise AccountResolutionError(f"No ChartOfAccounts found for business_id={business_id}")
+        raise AccountResolutionError(
+            f"No ChartOfAccounts found for business_id={business_id}"
+        )
     return chart
 
 
@@ -261,6 +262,7 @@ def user_can_access_business(user, business_id: int) -> bool:
 # ------------------------------------------------------------
 # INTERNAL RESOLUTION HELPERS
 # ------------------------------------------------------------
+
 
 def _resolve_code(*, semantic_key: str, chart: ChartOfAccounts) -> str:
     semantic_key = (semantic_key or "").strip().upper()
@@ -302,46 +304,65 @@ def _get_account_by_code(*, chart: ChartOfAccounts, code: str) -> Account:
 # PUBLIC RESOLVERS
 # ------------------------------------------------------------
 
+
 def get_cash_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="CASH", chart=chart))
+    return _get_account_by_code(
+        chart=chart, code=_resolve_code(semantic_key="CASH", chart=chart)
+    )
 
 
 def get_bank_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="BANK", chart=chart))
+    return _get_account_by_code(
+        chart=chart, code=_resolve_code(semantic_key="BANK", chart=chart)
+    )
 
 
 def get_accounts_receivable_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="AR", chart=chart))
+    return _get_account_by_code(
+        chart=chart, code=_resolve_code(semantic_key="AR", chart=chart)
+    )
 
 
 def get_inventory_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="INVENTORY", chart=chart))
+    return _get_account_by_code(
+        chart=chart, code=_resolve_code(semantic_key="INVENTORY", chart=chart)
+    )
 
 
 def get_cogs_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="COGS", chart=chart))
+    return _get_account_by_code(
+        chart=chart, code=_resolve_code(semantic_key="COGS", chart=chart)
+    )
 
 
 def get_accounts_payable_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="ACCOUNTS_PAYABLE", chart=chart))
+    return _get_account_by_code(
+        chart=chart, code=_resolve_code(semantic_key="ACCOUNTS_PAYABLE", chart=chart)
+    )
 
 
 def get_sales_revenue_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="SALES_REVENUE", chart=chart))
+    return _get_account_by_code(
+        chart=chart, code=_resolve_code(semantic_key="SALES_REVENUE", chart=chart)
+    )
 
 
 def get_sales_discount_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="SALES_DISCOUNT", chart=chart))
+    return _get_account_by_code(
+        chart=chart, code=_resolve_code(semantic_key="SALES_DISCOUNT", chart=chart)
+    )
 
 
 def get_vat_payable_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="VAT_PAYABLE", chart=chart))
+    return _get_account_by_code(
+        chart=chart, code=_resolve_code(semantic_key="VAT_PAYABLE", chart=chart)
+    )

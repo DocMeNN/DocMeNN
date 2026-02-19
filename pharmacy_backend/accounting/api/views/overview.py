@@ -19,18 +19,17 @@ from datetime import datetime, time
 
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import status
 
-from drf_spectacular.utils import extend_schema, OpenApiParameter
-
+from accounting.models.chart import ChartOfAccounts
 from accounting.models.period_close import PeriodClose
 from accounting.services.account_resolver import get_active_chart
 from accounting.services.balance_service import get_totals_by_account_type
 from accounting.services.profit_and_loss_service import get_profit_and_loss
-from accounting.models.chart import ChartOfAccounts
 
 
 def _as_float(v, default=0.0) -> float:
@@ -101,10 +100,16 @@ class AccountingOverviewView(APIView):
             try:
                 requested_chart_id = int(chart_id)
             except (ValueError, TypeError):
-                return Response({"detail": "chart_id must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": "chart_id must be an integer"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             if requested_chart_id != active_chart.id:
-                if not (request.user.is_superuser or request.user.has_perm("accounting.view_chartofaccounts")):
+                if not (
+                    request.user.is_superuser
+                    or request.user.has_perm("accounting.view_chartofaccounts")
+                ):
                     return Response(
                         {"detail": "You are not allowed to view this chart."},
                         status=status.HTTP_403_FORBIDDEN,
@@ -113,7 +118,10 @@ class AccountingOverviewView(APIView):
             try:
                 chart = ChartOfAccounts.objects.get(id=requested_chart_id)
             except ChartOfAccounts.DoesNotExist:
-                return Response({"detail": "Chart not found for given chart_id"}, status=status.HTTP_404_NOT_FOUND)
+                return Response(
+                    {"detail": "Chart not found for given chart_id"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
         else:
             chart = active_chart
 
@@ -172,7 +180,9 @@ class AccountingOverviewView(APIView):
                 totals = get_totals_by_account_type()
 
         assets = _pick_key(totals, "ASSET", "assets", "asset", default=0)
-        liabilities = _pick_key(totals, "LIABILITY", "liabilities", "liability", default=0)
+        liabilities = _pick_key(
+            totals, "LIABILITY", "liabilities", "liability", default=0
+        )
         equity = _pick_key(totals, "EQUITY", "equity", default=0)
 
         assets_n = _as_float(assets, 0)

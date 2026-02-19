@@ -28,9 +28,9 @@ Critical accounting rules enforced here:
 from __future__ import annotations
 
 from datetime import date as date_cls, datetime, time
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
-from django.db.models import Sum, Q
+from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -39,7 +39,6 @@ from accounting.models.chart import ChartOfAccounts
 from accounting.models.ledger import LedgerEntry
 from accounting.services.account_resolver import get_active_chart
 from accounting.services.exceptions import AccountingServiceError
-
 
 TWOPLACES = Decimal("0.01")
 
@@ -73,7 +72,9 @@ def _end_of_day_aware(d: date_cls) -> datetime:
     return naive
 
 
-def generate_balance_sheet(*, chart: ChartOfAccounts | None = None, as_of_date: str | None = None) -> dict:
+def generate_balance_sheet(
+    *, chart: ChartOfAccounts | None = None, as_of_date: str | None = None
+) -> dict:
     """
     Args:
         chart: Optional ChartOfAccounts. Defaults to active chart.
@@ -174,7 +175,11 @@ def generate_balance_sheet(*, chart: ChartOfAccounts | None = None, as_of_date: 
         return _q2(c - d)
 
     sections = {"assets": [], "liabilities": [], "equity": []}
-    totals = {"assets": Decimal("0.00"), "liabilities": Decimal("0.00"), "equity": Decimal("0.00")}
+    totals = {
+        "assets": Decimal("0.00"),
+        "liabilities": Decimal("0.00"),
+        "equity": Decimal("0.00"),
+    }
 
     revenue_total = Decimal("0.00")
     expense_total = Decimal("0.00")

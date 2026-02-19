@@ -20,18 +20,17 @@ from __future__ import annotations
 from datetime import datetime, time
 
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime, parse_date
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from django.utils.dateparse import parse_date, parse_datetime
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
-
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from accounting.models.chart import ChartOfAccounts
 from accounting.services.account_resolver import get_active_chart
-from accounting.services.profit_and_loss_service import get_profit_and_loss
 from accounting.services.exceptions import AccountingServiceError
+from accounting.services.profit_and_loss_service import get_profit_and_loss
 
 
 def _as_aware_dt(dt: datetime) -> datetime:
@@ -110,10 +109,16 @@ class ProfitAndLossView(APIView):
             try:
                 requested_chart_id = int(chart_id)
             except (ValueError, TypeError):
-                return Response({"detail": "chart_id must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": "chart_id must be an integer"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             if requested_chart_id != active_chart.id:
-                if not (request.user.is_superuser or request.user.has_perm("accounting.view_chartofaccounts")):
+                if not (
+                    request.user.is_superuser
+                    or request.user.has_perm("accounting.view_chartofaccounts")
+                ):
                     return Response(
                         {"detail": "You are not allowed to view this chart."},
                         status=status.HTTP_403_FORBIDDEN,
@@ -122,7 +127,10 @@ class ProfitAndLossView(APIView):
             try:
                 chart = ChartOfAccounts.objects.get(id=requested_chart_id)
             except ChartOfAccounts.DoesNotExist:
-                return Response({"detail": "Chart not found for given chart_id"}, status=status.HTTP_404_NOT_FOUND)
+                return Response(
+                    {"detail": "Chart not found for given chart_id"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
         else:
             chart = active_chart
 
@@ -157,15 +165,26 @@ class ProfitAndLossView(APIView):
             if isinstance(end_parsed, datetime):
                 end_dt = _as_aware_dt(end_parsed)
             else:
-                end_dt = _as_aware_dt(datetime.combine(end_parsed, time.max.replace(microsecond=0)))
+                end_dt = _as_aware_dt(
+                    datetime.combine(end_parsed, time.max.replace(microsecond=0))
+                )
 
         if start_dt and end_dt and start_dt > end_dt:
-            return Response({"detail": "start_date cannot be after end_date"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "start_date cannot be after end_date"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
-            data = get_profit_and_loss(chart=chart, start_date=start_dt, end_date=end_dt)
+            data = get_profit_and_loss(
+                chart=chart, start_date=start_dt, end_date=end_dt
+            )
 
-            data["chart"] = {"id": chart.id, "name": chart.name, "is_active": chart.is_active}
+            data["chart"] = {
+                "id": chart.id,
+                "name": chart.name,
+                "is_active": chart.is_active,
+            }
             data["period"] = {
                 "start_date": start_dt.isoformat() if start_dt else None,
                 "end_date": end_dt.isoformat() if end_dt else None,

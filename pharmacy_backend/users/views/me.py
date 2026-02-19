@@ -1,14 +1,13 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import serializers
-
 from drf_spectacular.utils import extend_schema
-
+from rest_framework import serializers
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 # ---------------------------
 # SERIALIZER
 # ---------------------------
+
 
 class MeSerializer(serializers.Serializer):
     id = serializers.UUIDField()
@@ -21,6 +20,7 @@ class MeSerializer(serializers.Serializer):
 # ---------------------------
 # VIEW
 # ---------------------------
+
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]

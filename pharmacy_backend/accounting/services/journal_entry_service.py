@@ -24,7 +24,7 @@ ANTI-CIRCULAR-IMPORT RULE:
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -63,7 +63,9 @@ def _as_aware_dt(dt: datetime | None) -> datetime:
     return dt
 
 
-def _normalize_reference(reference_type: str | None, reference_id: str | None) -> str | None:
+def _normalize_reference(
+    reference_type: str | None, reference_id: str | None
+) -> str | None:
     if not reference_type or not reference_id:
         return None
 
@@ -104,7 +106,10 @@ def _enforce_period_lock(*, chart, posted_at: datetime) -> None:
     - period_lock imports PeriodClose model; models must never import services.
     """
     try:
-        from accounting.services.period_lock import assert_period_open, PeriodLockedError
+        from accounting.services.period_lock import (
+            PeriodLockedError,
+            assert_period_open,
+        )
     except Exception as exc:
         raise JournalEntryCreationError(
             "Period lock enforcement is enabled, but period_lock could not be imported."
@@ -126,7 +131,9 @@ def create_journal_entry(
     posted_at: datetime | None = None,
 ):
     if not postings:
-        raise JournalEntryCreationError("Journal entry must contain at least one posting")
+        raise JournalEntryCreationError(
+            "Journal entry must contain at least one posting"
+        )
 
     description = (description or "").strip()
     if not description:
@@ -147,7 +154,9 @@ def create_journal_entry(
             raise JournalEntryCreationError("Posting missing account")
 
         if not getattr(account, "is_active", True):
-            raise JournalEntryCreationError(f"Account {getattr(account, 'code', 'UNKNOWN')} is inactive")
+            raise JournalEntryCreationError(
+                f"Account {getattr(account, 'code', 'UNKNOWN')} is inactive"
+            )
 
         debit = _money(line.get("debit"))
         credit = _money(line.get("credit"))
@@ -156,10 +165,14 @@ def create_journal_entry(
             raise JournalEntryCreationError("Debit or credit cannot be negative")
 
         if debit > 0 and credit > 0:
-            raise JournalEntryCreationError("A posting cannot have both debit and credit")
+            raise JournalEntryCreationError(
+                "A posting cannot have both debit and credit"
+            )
 
         if debit == 0 and credit == 0:
-            raise JournalEntryCreationError("A posting must have either debit or credit")
+            raise JournalEntryCreationError(
+                "A posting must have either debit or credit"
+            )
 
         if debit > 0 and debit < MIN_LINE_AMOUNT:
             raise JournalEntryCreationError(f"Debit amount too small: {debit}")
@@ -169,7 +182,9 @@ def create_journal_entry(
         total_debits += debit
         total_credits += credit
 
-        normalized_postings.append({"account": account, "debit": debit, "credit": credit})
+        normalized_postings.append(
+            {"account": account, "debit": debit, "credit": credit}
+        )
 
     total_debits = total_debits.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
     total_credits = total_credits.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
@@ -187,7 +202,9 @@ def create_journal_entry(
 
     # Clear error before DB constraint race handling
     if reference and JournalEntry.objects.filter(reference=reference).exists():
-        raise IdempotencyError(f"Journal entry already exists for reference {reference}")
+        raise IdempotencyError(
+            f"Journal entry already exists for reference {reference}"
+        )
 
     try:
         journal_entry = JournalEntry.objects.create(
@@ -198,8 +215,12 @@ def create_journal_entry(
         )
     except IntegrityError as exc:
         if reference and JournalEntry.objects.filter(reference=reference).exists():
-            raise IdempotencyError(f"Journal entry already exists for reference {reference}") from exc
-        raise JournalEntryCreationError(f"Failed to create journal entry: {exc}") from exc
+            raise IdempotencyError(
+                f"Journal entry already exists for reference {reference}"
+            ) from exc
+        raise JournalEntryCreationError(
+            f"Failed to create journal entry: {exc}"
+        ) from exc
 
     ledger_entries: list[LedgerEntry] = []
     for line in normalized_postings:

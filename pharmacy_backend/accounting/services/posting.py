@@ -47,10 +47,10 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, time
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Iterable, Any
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any, Iterable
 
-from django.db.models import Sum, F, DecimalField
+from django.db.models import DecimalField, F, Sum
 from django.db.models.expressions import ExpressionWrapper
 from django.utils import timezone
 
@@ -120,8 +120,14 @@ def _infer_chart_from_postings(postings: list[dict]) -> object | None:
             continue
         acc_chart = getattr(acc, "chart", None)
         acc_chart_id = getattr(acc, "chart_id", None) or getattr(acc_chart, "id", None)
-        if chart_id is not None and acc_chart_id is not None and acc_chart_id != chart_id:
-            raise ValueError("Cross-chart postings are not allowed (chart mismatch across posting lines).")
+        if (
+            chart_id is not None
+            and acc_chart_id is not None
+            and acc_chart_id != chart_id
+        ):
+            raise ValueError(
+                "Cross-chart postings are not allowed (chart mismatch across posting lines)."
+            )
 
     # Return the chart object only if we actually have it; otherwise None (no guessing).
     return chart
@@ -140,7 +146,7 @@ def _enforce_period_open(*, chart, posted_at: datetime | None) -> None:
     if chart is None:
         return
 
-    from accounting.services.period_lock import assert_period_open, PeriodLockedError
+    from accounting.services.period_lock import PeriodLockedError, assert_period_open
 
     try:
         assert_period_open(chart=chart, posted_at=posted_at)
@@ -161,9 +167,9 @@ def _resolve_account_for_method(method: str):
     - credit   -> Accounts Receivable
     """
     from accounting.services.account_resolver import (
-        get_cash_account,
-        get_bank_account,
         get_accounts_receivable_account,
+        get_bank_account,
+        get_cash_account,
     )
 
     m = (method or "").strip().lower()
@@ -185,8 +191,8 @@ def _resolve_debit_account_for_payment_method(*, sale):
 def _require_cost_accounts():
     try:
         from accounting.services.account_resolver import (
-            get_inventory_account,
             get_cogs_account,
+            get_inventory_account,
         )
     except Exception as exc:
         raise ValueError(
@@ -238,7 +244,11 @@ def _merge_postings_by_account(postings: list[dict]) -> list[dict]:
         debit = _money(p.get("debit", 0))
         credit = _money(p.get("credit", 0))
         if acct not in merged:
-            merged[acct] = {"account": acct, "debit": Decimal("0.00"), "credit": Decimal("0.00")}
+            merged[acct] = {
+                "account": acct,
+                "debit": Decimal("0.00"),
+                "credit": Decimal("0.00"),
+            }
         merged[acct]["debit"] = _money(merged[acct]["debit"] + debit)
         merged[acct]["credit"] = _money(merged[acct]["credit"] + credit)
 
@@ -265,7 +275,9 @@ def _get_split_allocations_or_none(*, sale):
 
     from sales.models.sale_payment_allocation import SalePaymentAllocation
 
-    allocs = list(SalePaymentAllocation.objects.filter(sale=sale).order_by("created_at", "id"))
+    allocs = list(
+        SalePaymentAllocation.objects.filter(sale=sale).order_by("created_at", "id")
+    )
     if not allocs:
         raise ValueError(
             f"Sale {getattr(sale, 'id', sale)} is marked as split payment "
@@ -332,14 +344,17 @@ def _partial_refund_reference_id(*, sale, refund_items: Iterable[Any]) -> str:
 # POS SALE POSTING
 # ============================================================
 
+
 def post_sale_to_ledger(*, sale):
     from accounting.services.account_resolver import (
-        get_sales_revenue_account,
         get_sales_discount_account,
+        get_sales_revenue_account,
         get_vat_payable_account,
     )
 
-    revenue_account = getattr(sale, "revenue_account", None) or get_sales_revenue_account()
+    revenue_account = (
+        getattr(sale, "revenue_account", None) or get_sales_revenue_account()
+    )
     vat_account = getattr(sale, "vat_account", None) or get_vat_payable_account()
 
     total = _money(getattr(sale, "total_amount", None))
@@ -347,7 +362,9 @@ def post_sale_to_ledger(*, sale):
     tax = _money(getattr(sale, "tax_amount", None))
     discount = _money(getattr(sale, "discount_amount", None))
 
-    expected_total = (subtotal + tax - discount).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    expected_total = (subtotal + tax - discount).quantize(
+        TWOPLACES, rounding=ROUND_HALF_UP
+    )
     if expected_total != total:
         raise ValueError(
             f"Sale totals mismatch: subtotal({subtotal}) + tax({tax}) - discount({discount}) != total({total})"
@@ -362,30 +379,48 @@ def post_sale_to_ledger(*, sale):
             for leg in split_allocs:
                 acct = _resolve_account_for_method(leg["method"])
                 amt = _money(leg["amount"])
-                postings.append({"account": acct, "debit": amt, "credit": Decimal("0.00")})
+                postings.append(
+                    {"account": acct, "debit": amt, "credit": Decimal("0.00")}
+                )
         else:
-            debit_account = getattr(sale, "cash_account", None) or _resolve_debit_account_for_payment_method(sale=sale)
-            postings.append({"account": debit_account, "debit": total, "credit": Decimal("0.00")})
+            debit_account = getattr(
+                sale, "cash_account", None
+            ) or _resolve_debit_account_for_payment_method(sale=sale)
+            postings.append(
+                {"account": debit_account, "debit": total, "credit": Decimal("0.00")}
+            )
 
     # Discount (debit)
     if discount > Decimal("0.00"):
-        discount_account = getattr(sale, "discount_account", None) or get_sales_discount_account()
-        postings.append({"account": discount_account, "debit": discount, "credit": Decimal("0.00")})
+        discount_account = (
+            getattr(sale, "discount_account", None) or get_sales_discount_account()
+        )
+        postings.append(
+            {"account": discount_account, "debit": discount, "credit": Decimal("0.00")}
+        )
 
     # Revenue (credit)
     if subtotal > Decimal("0.00"):
-        postings.append({"account": revenue_account, "debit": Decimal("0.00"), "credit": subtotal})
+        postings.append(
+            {"account": revenue_account, "debit": Decimal("0.00"), "credit": subtotal}
+        )
 
     # VAT (credit)
     if tax > Decimal("0.00"):
-        postings.append({"account": vat_account, "debit": Decimal("0.00"), "credit": tax})
+        postings.append(
+            {"account": vat_account, "debit": Decimal("0.00"), "credit": tax}
+        )
 
     # Cost side
     cogs = _compute_sale_cogs_from_movements(sale=sale)
     if cogs > Decimal("0.00"):
         inventory_account, cogs_account = _require_cost_accounts()
-        postings.append({"account": cogs_account, "debit": cogs, "credit": Decimal("0.00")})
-        postings.append({"account": inventory_account, "debit": Decimal("0.00"), "credit": cogs})
+        postings.append(
+            {"account": cogs_account, "debit": cogs, "credit": Decimal("0.00")}
+        )
+        postings.append(
+            {"account": inventory_account, "debit": Decimal("0.00"), "credit": cogs}
+        )
 
     postings = _merge_postings_by_account(postings)
     posted_at = _best_effort_posted_at_from_obj(sale)
@@ -406,14 +441,17 @@ def post_sale_to_ledger(*, sale):
 # POS REFUND POSTING (FULL)
 # ============================================================
 
+
 def post_refund_to_ledger(*, sale, refund_audit):
     from accounting.services.account_resolver import (
-        get_sales_revenue_account,
         get_sales_discount_account,
+        get_sales_revenue_account,
         get_vat_payable_account,
     )
 
-    revenue_account = getattr(sale, "revenue_account", None) or get_sales_revenue_account()
+    revenue_account = (
+        getattr(sale, "revenue_account", None) or get_sales_revenue_account()
+    )
     vat_account = getattr(sale, "vat_account", None) or get_vat_payable_account()
 
     raw_total = (
@@ -446,7 +484,9 @@ def post_refund_to_ledger(*, sale, refund_audit):
         or getattr(sale, "discount_amount", None)
     )
 
-    expected_total = (subtotal + tax - discount).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    expected_total = (subtotal + tax - discount).quantize(
+        TWOPLACES, rounding=ROUND_HALF_UP
+    )
     if expected_total != total:
         raise ValueError(
             f"Refund totals mismatch: subtotal({subtotal}) + tax({tax}) - discount({discount}) != total({total})"
@@ -456,14 +496,22 @@ def post_refund_to_ledger(*, sale, refund_audit):
 
     # Reverse revenue
     if subtotal > Decimal("0.00"):
-        postings.append({"account": revenue_account, "debit": subtotal, "credit": Decimal("0.00")})
+        postings.append(
+            {"account": revenue_account, "debit": subtotal, "credit": Decimal("0.00")}
+        )
 
     if tax > Decimal("0.00"):
-        postings.append({"account": vat_account, "debit": tax, "credit": Decimal("0.00")})
+        postings.append(
+            {"account": vat_account, "debit": tax, "credit": Decimal("0.00")}
+        )
 
     if discount > Decimal("0.00"):
-        discount_account = getattr(sale, "discount_account", None) or get_sales_discount_account()
-        postings.append({"account": discount_account, "debit": Decimal("0.00"), "credit": discount})
+        discount_account = (
+            getattr(sale, "discount_account", None) or get_sales_discount_account()
+        )
+        postings.append(
+            {"account": discount_account, "debit": Decimal("0.00"), "credit": discount}
+        )
 
     # Credit payment accounts back
     split_allocs = _get_split_allocations_or_none(sale=sale)
@@ -472,20 +520,32 @@ def post_refund_to_ledger(*, sale, refund_audit):
             for leg in split_allocs:
                 acct = _resolve_account_for_method(leg["method"])
                 amt = _money(leg["amount"])
-                postings.append({"account": acct, "debit": Decimal("0.00"), "credit": amt})
+                postings.append(
+                    {"account": acct, "debit": Decimal("0.00"), "credit": amt}
+                )
         else:
-            credit_account = getattr(sale, "cash_account", None) or _resolve_debit_account_for_payment_method(sale=sale)
-            postings.append({"account": credit_account, "debit": Decimal("0.00"), "credit": total})
+            credit_account = getattr(
+                sale, "cash_account", None
+            ) or _resolve_debit_account_for_payment_method(sale=sale)
+            postings.append(
+                {"account": credit_account, "debit": Decimal("0.00"), "credit": total}
+            )
 
     # Reverse COGS (full)
     cogs = _compute_sale_cogs_from_movements(sale=sale)
     if cogs > Decimal("0.00"):
         inventory_account, cogs_account = _require_cost_accounts()
-        postings.append({"account": inventory_account, "debit": cogs, "credit": Decimal("0.00")})
-        postings.append({"account": cogs_account, "debit": Decimal("0.00"), "credit": cogs})
+        postings.append(
+            {"account": inventory_account, "debit": cogs, "credit": Decimal("0.00")}
+        )
+        postings.append(
+            {"account": cogs_account, "debit": Decimal("0.00"), "credit": cogs}
+        )
 
     postings = _merge_postings_by_account(postings)
-    posted_at = _best_effort_posted_at_from_obj(refund_audit) or _best_effort_posted_at_from_obj(sale)
+    posted_at = _best_effort_posted_at_from_obj(
+        refund_audit
+    ) or _best_effort_posted_at_from_obj(sale)
 
     chart = _infer_chart_from_postings(postings)
     _enforce_period_open(chart=chart, posted_at=posted_at)
@@ -505,6 +565,7 @@ def post_refund_to_ledger(*, sale, refund_audit):
 # POS PARTIAL REFUND POSTING
 # ============================================================
 
+
 def post_partial_refund_to_ledger(*, sale, refund_items: Iterable[Any]):
     """
     Proportional reversal for a subset of items.
@@ -522,8 +583,8 @@ def post_partial_refund_to_ledger(*, sale, refund_items: Iterable[Any]):
     - Uses refund item snapshots (unit_cost_snapshot * qty) — deterministic.
     """
     from accounting.services.account_resolver import (
-        get_sales_revenue_account,
         get_sales_discount_account,
+        get_sales_revenue_account,
         get_vat_payable_account,
     )
 
@@ -531,7 +592,9 @@ def post_partial_refund_to_ledger(*, sale, refund_items: Iterable[Any]):
     if not refund_items:
         raise ValueError("refund_items is required for partial refund posting")
 
-    revenue_account = getattr(sale, "revenue_account", None) or get_sales_revenue_account()
+    revenue_account = (
+        getattr(sale, "revenue_account", None) or get_sales_revenue_account()
+    )
     vat_account = getattr(sale, "vat_account", None) or get_vat_payable_account()
 
     sale_subtotal = _money(getattr(sale, "subtotal_amount", None))
@@ -553,8 +616,8 @@ def post_partial_refund_to_ledger(*, sale, refund_items: Iterable[Any]):
         unit_price = _money(getattr(r, "unit_price_snapshot", None))
         unit_cost = _money(getattr(r, "unit_cost_snapshot", None))
 
-        refunded_subtotal += (unit_price * Decimal(qty))
-        refunded_cogs += (unit_cost * Decimal(qty))
+        refunded_subtotal += unit_price * Decimal(qty)
+        refunded_cogs += unit_cost * Decimal(qty)
 
     refunded_subtotal = _money(refunded_subtotal)
     refunded_cogs = _money(refunded_cogs)
@@ -564,7 +627,9 @@ def post_partial_refund_to_ledger(*, sale, refund_items: Iterable[Any]):
 
     ratio = Decimal("0.00")
     if sale_subtotal > Decimal("0.00"):
-        ratio = (refunded_subtotal / sale_subtotal).quantize(RATIO_PLACES, rounding=ROUND_HALF_UP)
+        ratio = (refunded_subtotal / sale_subtotal).quantize(
+            RATIO_PLACES, rounding=ROUND_HALF_UP
+        )
 
     prorated_tax = _prorate(amount=sale_tax, ratio=ratio)
     prorated_discount = _prorate(amount=sale_discount, ratio=ratio)
@@ -576,19 +641,37 @@ def post_partial_refund_to_ledger(*, sale, refund_items: Iterable[Any]):
     postings: list[dict] = []
 
     # Reverse revenue portion
-    postings.append({"account": revenue_account, "debit": refunded_subtotal, "credit": Decimal("0.00")})
+    postings.append(
+        {
+            "account": revenue_account,
+            "debit": refunded_subtotal,
+            "credit": Decimal("0.00"),
+        }
+    )
 
     if prorated_tax > Decimal("0.00"):
-        postings.append({"account": vat_account, "debit": prorated_tax, "credit": Decimal("0.00")})
+        postings.append(
+            {"account": vat_account, "debit": prorated_tax, "credit": Decimal("0.00")}
+        )
 
     if prorated_discount > Decimal("0.00"):
-        discount_account = getattr(sale, "discount_account", None) or get_sales_discount_account()
-        postings.append({"account": discount_account, "debit": Decimal("0.00"), "credit": prorated_discount})
+        discount_account = (
+            getattr(sale, "discount_account", None) or get_sales_discount_account()
+        )
+        postings.append(
+            {
+                "account": discount_account,
+                "debit": Decimal("0.00"),
+                "credit": prorated_discount,
+            }
+        )
 
     # Payment credits back
     split_allocs = _get_split_allocations_or_none(sale=sale)
     if split_allocs:
-        leg_ratio = (refund_total / sale_total).quantize(RATIO_PLACES, rounding=ROUND_HALF_UP)
+        leg_ratio = (refund_total / sale_total).quantize(
+            RATIO_PLACES, rounding=ROUND_HALF_UP
+        )
 
         credited_sum = Decimal("0.00")
         last_idx = len(split_allocs) - 1
@@ -602,7 +685,9 @@ def post_partial_refund_to_ledger(*, sale, refund_items: Iterable[Any]):
                 share = _money(refund_total - credited_sum)
 
             if share > Decimal("0.00"):
-                postings.append({"account": acct, "debit": Decimal("0.00"), "credit": share})
+                postings.append(
+                    {"account": acct, "debit": Decimal("0.00"), "credit": share}
+                )
                 credited_sum = _money(credited_sum + share)
 
         if _money(credited_sum) != refund_total:
@@ -610,14 +695,30 @@ def post_partial_refund_to_ledger(*, sale, refund_items: Iterable[Any]):
                 f"Split partial refund credit mismatch: credited_sum({credited_sum}) != refund_total({refund_total})"
             )
     else:
-        credit_account = getattr(sale, "cash_account", None) or _resolve_debit_account_for_payment_method(sale=sale)
-        postings.append({"account": credit_account, "debit": Decimal("0.00"), "credit": refund_total})
+        credit_account = getattr(
+            sale, "cash_account", None
+        ) or _resolve_debit_account_for_payment_method(sale=sale)
+        postings.append(
+            {
+                "account": credit_account,
+                "debit": Decimal("0.00"),
+                "credit": refund_total,
+            }
+        )
 
     # Reverse COGS using refund snapshots (authoritative)
     if refunded_cogs > Decimal("0.00"):
         inventory_account, cogs_account = _require_cost_accounts()
-        postings.append({"account": inventory_account, "debit": refunded_cogs, "credit": Decimal("0.00")})
-        postings.append({"account": cogs_account, "debit": Decimal("0.00"), "credit": refunded_cogs})
+        postings.append(
+            {
+                "account": inventory_account,
+                "debit": refunded_cogs,
+                "credit": Decimal("0.00"),
+            }
+        )
+        postings.append(
+            {"account": cogs_account, "debit": Decimal("0.00"), "credit": refunded_cogs}
+        )
 
     postings = _merge_postings_by_account(postings)
     posted_at = _best_effort_posted_at_from_obj(sale)
@@ -638,6 +739,7 @@ def post_partial_refund_to_ledger(*, sale, refund_items: Iterable[Any]):
 # ============================================================
 # OPENING BALANCES
 # ============================================================
+
 
 def post_opening_balances_to_ledger(
     *,
@@ -671,6 +773,7 @@ def post_opening_balances_to_ledger(
 # ============================================================
 # EXPENSES
 # ============================================================
+
 
 def post_expense_to_ledger(
     *,
@@ -715,6 +818,7 @@ def post_expense_to_ledger(
 # PURCHASE RECEIPTS (STOCK IN)
 # ============================================================
 
+
 def post_purchase_receipt_to_ledger(
     *,
     invoice_id: str,
@@ -757,6 +861,7 @@ def post_purchase_receipt_to_ledger(
 # ============================================================
 # SUPPLIER PAYMENTS (SETTLE ACCOUNTS PAYABLE)
 # ============================================================
+
 
 def post_supplier_payment_to_ledger(
     *,

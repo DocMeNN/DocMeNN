@@ -44,22 +44,18 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Sum
 
+from accounting.services.exceptions import (
+    AccountResolutionError,
+    IdempotencyError,
+    JournalEntryCreationError,
+)
+from permissions.roles import ROLE_ADMIN, ROLE_PHARMACIST
+from products.services.stock_fifo import restore_stock_from_sale
+from sales.models.refund_audit import SaleRefundAudit
 from sales.models.sale import Sale
 from sales.models.sale_item import SaleItem
-from sales.models.refund_audit import SaleRefundAudit
 from sales.models.sale_item_refund import SaleItemRefund
 from sales.services.refund_service import refund_sale
-
-from products.services.stock_fifo import restore_stock_from_sale
-
-from accounting.services.exceptions import (
-    JournalEntryCreationError,
-    IdempotencyError,
-    AccountResolutionError,
-)
-
-from permissions.roles import ROLE_ADMIN, ROLE_PHARMACIST
-
 
 ALLOWED_REFUND_ROLES = {ROLE_ADMIN, ROLE_PHARMACIST}
 
@@ -99,7 +95,9 @@ def _normalize_partial_items(*, sale: Sale, items: list[dict]) -> list[dict]:
         raise ValidationError("Partial refund requires items.")
 
     if not hasattr(sale, "items"):
-        raise ValidationError("Sale items relation not available; cannot process partial refund.")
+        raise ValidationError(
+            "Sale items relation not available; cannot process partial refund."
+        )
 
     sale_items = list(sale.items.all())
     sale_item_ids = {str(si.id) for si in sale_items}
@@ -125,7 +123,9 @@ def _normalize_partial_items(*, sale: Sale, items: list[dict]) -> list[dict]:
 
         agg[sid] += qty
 
-    normalized = [{"sale_item_id": sid, "quantity": qty} for sid, qty in agg.items() if qty > 0]
+    normalized = [
+        {"sale_item_id": sid, "quantity": qty} for sid, qty in agg.items() if qty > 0
+    ]
     if not normalized:
         raise ValidationError("No valid refund lines provided.")
 
@@ -170,7 +170,9 @@ def _ensure_partial_ceiling(*, sale: Sale, normalized_items: list[dict]):
             )
 
 
-def _create_item_refund_rows(*, sale: Sale, user, reason: str | None, normalized_items: list[dict]) -> list[SaleItemRefund]:
+def _create_item_refund_rows(
+    *, sale: Sale, user, reason: str | None, normalized_items: list[dict]
+) -> list[SaleItemRefund]:
     """
     Create immutable SaleItemRefund rows (append-only).
     Snapshots price/cost from SaleItem (authoritative snapshot fields).
@@ -301,7 +303,9 @@ def refund_sale_with_stock_restoration(
         )
 
         # Must exist now
-        refund_audit = SaleRefundAudit.objects.select_related("sale").get(sale=refunded_sale)
+        refund_audit = SaleRefundAudit.objects.select_related("sale").get(
+            sale=refunded_sale
+        )
 
         # Stock restoration (full)
         restore_stock_from_sale(
@@ -313,11 +317,18 @@ def refund_sale_with_stock_restoration(
         # Ledger posting (full reversal)
         try:
             from accounting.services.posting import post_refund_to_ledger
+
             post_refund_to_ledger(sale=refunded_sale, refund_audit=refund_audit)
-        except (JournalEntryCreationError, IdempotencyError, AccountResolutionError) as exc:
+        except (
+            JournalEntryCreationError,
+            IdempotencyError,
+            AccountResolutionError,
+        ) as exc:
             raise RefundOrchestratorError(str(exc)) from exc
         except Exception as exc:
-            raise RefundOrchestratorError(f"Refund ledger posting failed: {exc}") from exc
+            raise RefundOrchestratorError(
+                f"Refund ledger posting failed: {exc}"
+            ) from exc
 
         return refunded_sale
 
@@ -359,7 +370,9 @@ def refund_sale_with_stock_restoration(
     except RefundOrchestratorError:
         raise
     except Exception as exc:
-        raise RefundOrchestratorError(f"Partial refund ledger posting failed: {exc}") from exc
+        raise RefundOrchestratorError(
+            f"Partial refund ledger posting failed: {exc}"
+        ) from exc
 
     # Update status if supported
     _maybe_mark_sale_partially_refunded(sale=sale)

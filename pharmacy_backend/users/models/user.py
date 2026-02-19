@@ -17,9 +17,14 @@ Migration safety:
 from __future__ import annotations
 
 import uuid
-from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    BaseUserManager,
+    PermissionsMixin,
+)
 from django.core.exceptions import ValidationError
+from django.db import models
 
 
 # ---------------- USER MANAGER ----------------
@@ -89,7 +94,9 @@ class UserManager(BaseUserManager):
 
         # Ensure username exists (derive if not provided)
         if not (extra_fields.get("username") or "").strip():
-            base = (self.normalize_email(email).split("@")[0] or "admin").strip().lower()
+            base = (
+                (self.normalize_email(email).split("@")[0] or "admin").strip().lower()
+            )
             candidate = base
             i = 1
             while self.model.objects.filter(username__iexact=candidate).exists():

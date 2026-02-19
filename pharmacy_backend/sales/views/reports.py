@@ -1,21 +1,18 @@
 # sales/views/reports.py
 
-from decimal import Decimal
 from datetime import datetime, time, timedelta
+from decimal import Decimal
 
-from django.db.models import Sum, Count
+from django.db.models import Count, Sum
 from django.utils import timezone
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
-
-from sales.models.sale import Sale
+from permissions.roles import CAP_REPORTS_VIEW_POS, HasCapability
 from sales.models.refund_audit import SaleRefundAudit
-
-from permissions.roles import HasCapability, CAP_REPORTS_VIEW_POS
+from sales.models.sale import Sale
 
 
 def _parse_report_date(date_str: str | None):
@@ -53,7 +50,9 @@ def _money(x) -> str:
     return f"{Decimal(str(x)):.2f}"
 
 
-def _display_name(email: str | None, first_name: str | None, last_name: str | None) -> str:
+def _display_name(
+    email: str | None, first_name: str | None, last_name: str | None
+) -> str:
     """
     Best-effort display label for cashier.
     """
@@ -228,7 +227,9 @@ class CashReconciliationReportView(APIView):
     def get(self, request):
         d = _parse_report_date(request.query_params.get("date"))
         if d is None:
-            return Response({"detail": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+            return Response(
+                {"detail": "Invalid date format. Use YYYY-MM-DD."}, status=400
+            )
 
         start, end = _day_bounds(d)
 
@@ -238,19 +239,13 @@ class CashReconciliationReportView(APIView):
             completed_at__lt=end,
         )
 
-        cash_total = (
-            qs.filter(payment_method__iexact="cash")
-            .aggregate(total=Sum("total_amount"))
-            .get("total")
-            or Decimal("0.00")
-        )
+        cash_total = qs.filter(payment_method__iexact="cash").aggregate(
+            total=Sum("total_amount")
+        ).get("total") or Decimal("0.00")
 
-        non_cash_total = (
-            qs.exclude(payment_method__iexact="cash")
-            .aggregate(total=Sum("total_amount"))
-            .get("total")
-            or Decimal("0.00")
-        )
+        non_cash_total = qs.exclude(payment_method__iexact="cash").aggregate(
+            total=Sum("total_amount")
+        ).get("total") or Decimal("0.00")
 
         breakdown = list(
             qs.values("payment_method")
@@ -299,7 +294,9 @@ class ZReportView(APIView):
     def get(self, request):
         d = _parse_report_date(request.query_params.get("date"))
         if d is None:
-            return Response({"detail": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+            return Response(
+                {"detail": "Invalid date format. Use YYYY-MM-DD."}, status=400
+            )
 
         start, end = _day_bounds(d)
 
@@ -309,18 +306,15 @@ class ZReportView(APIView):
             completed_at__lt=end,
         )
 
-        gross_total = completed_qs.aggregate(total=Sum("total_amount")).get("total") or Decimal("0.00")
+        gross_total = completed_qs.aggregate(total=Sum("total_amount")).get(
+            "total"
+        ) or Decimal("0.00")
         tx_count = completed_qs.count()
 
-        refunds_total = (
-            SaleRefundAudit.objects.filter(
-                sale__completed_at__gte=start,
-                sale__completed_at__lt=end,
-            )
-            .aggregate(total=Sum("original_total_amount"))
-            .get("total")
-            or Decimal("0.00")
-        )
+        refunds_total = SaleRefundAudit.objects.filter(
+            sale__completed_at__gte=start,
+            sale__completed_at__lt=end,
+        ).aggregate(total=Sum("original_total_amount")).get("total") or Decimal("0.00")
 
         return Response(
             {

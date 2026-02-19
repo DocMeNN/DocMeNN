@@ -12,29 +12,25 @@ This is required because existing tests and early deployments may not pass store
 
 from __future__ import annotations
 
-from django.shortcuts import get_object_or_404
 from django.db import transaction
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiExample, extend_schema
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-from rest_framework import serializers
-
-from drf_spectacular.utils import extend_schema, OpenApiExample
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from pos.models import Cart, CartItem
 from pos.serializers import CartSerializer
 from products.models import Product
-from store.models import Store
-
 from sales.services.checkout_orchestrator import (
-    checkout_cart,
-    EmptyCartError,
-    StockValidationError,
     AccountingPostingError,
     CheckoutError,
+    EmptyCartError,
+    StockValidationError,
+    checkout_cart,
 )
+from store.models import Store
 
 
 class AddCartItemInputSerializer(serializers.Serializer):
@@ -53,7 +49,9 @@ class ActiveCartQuerySerializer(serializers.Serializer):
 
 
 class PaymentAllocationInputSerializer(serializers.Serializer):
-    method = serializers.ChoiceField(choices=["cash", "bank", "pos", "transfer", "credit"])
+    method = serializers.ChoiceField(
+        choices=["cash", "bank", "pos", "transfer", "credit"]
+    )
     amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0.01)
     reference = serializers.CharField(required=False, allow_blank=True, default="")
     note = serializers.CharField(required=False, allow_blank=True, default="")
@@ -77,7 +75,10 @@ def error_response(*, code: str, message: str, http_status: int):
 def _raw_store_id_from_request(*, request) -> str:
     raw = (request.query_params.get("store_id") or "").strip()
     if not raw:
-        raw = str((request.data.get("store_id") if isinstance(request.data, dict) else "") or "").strip()
+        raw = str(
+            (request.data.get("store_id") if isinstance(request.data, dict) else "")
+            or ""
+        ).strip()
     return raw
 
 
@@ -286,8 +287,12 @@ class CheckoutCartView(APIView):
         store = _resolve_store_optional(request=request)
         cart = _get_active_cart(user=request.user, store=store)
 
-        payment_method = (serializer.validated_data.get("payment_method") or "").strip() or "cash"
-        payment_allocations = serializer.validated_data.get("payment_allocations") or None
+        payment_method = (
+            serializer.validated_data.get("payment_method") or ""
+        ).strip() or "cash"
+        payment_allocations = (
+            serializer.validated_data.get("payment_allocations") or None
+        )
 
         try:
             sale = checkout_cart(
@@ -297,15 +302,35 @@ class CheckoutCartView(APIView):
                 payment_allocations=payment_allocations,
             )
         except EmptyCartError as exc:
-            return error_response(code="EMPTY_CART", message=str(exc), http_status=status.HTTP_400_BAD_REQUEST)
+            return error_response(
+                code="EMPTY_CART",
+                message=str(exc),
+                http_status=status.HTTP_400_BAD_REQUEST,
+            )
         except StockValidationError as exc:
-            return error_response(code="INSUFFICIENT_STOCK", message=str(exc), http_status=status.HTTP_400_BAD_REQUEST)
+            return error_response(
+                code="INSUFFICIENT_STOCK",
+                message=str(exc),
+                http_status=status.HTTP_400_BAD_REQUEST,
+            )
         except AccountingPostingError as exc:
-            return error_response(code="ACCOUNTING_POST_FAILED", message=str(exc), http_status=status.HTTP_400_BAD_REQUEST)
+            return error_response(
+                code="ACCOUNTING_POST_FAILED",
+                message=str(exc),
+                http_status=status.HTTP_400_BAD_REQUEST,
+            )
         except CheckoutError as exc:
-            return error_response(code="CHECKOUT_FAILED", message=str(exc), http_status=status.HTTP_400_BAD_REQUEST)
+            return error_response(
+                code="CHECKOUT_FAILED",
+                message=str(exc),
+                http_status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as exc:
-            return error_response(code="UNKNOWN_ERROR", message=f"Checkout failed: {exc}", http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return error_response(
+                code="UNKNOWN_ERROR",
+                message=f"Checkout failed: {exc}",
+                http_status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         # IMPORTANT: tests expect 201
         return Response(
@@ -314,8 +339,9 @@ class CheckoutCartView(APIView):
                 "sale_status": sale.status,
                 "total_amount": str(sale.total_amount),
                 "payment_method": sale.payment_method,
-                "completed_at": sale.completed_at.isoformat() if sale.completed_at else None,
+                "completed_at": sale.completed_at.isoformat()
+                if sale.completed_at
+                else None,
             },
             status=status.HTTP_201_CREATED,
         )
-

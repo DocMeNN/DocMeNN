@@ -1,13 +1,13 @@
 # public/services/paystack.py
 from __future__ import annotations
 
-import json
-import hmac
 import hashlib
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import hmac
+import json
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
-from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from django.conf import settings
 
@@ -51,7 +51,9 @@ def _parse_json_or_text(raw: str) -> dict[str, Any]:
         return {"kind": "text", "raw": raw}
 
 
-def _request_json(method: str, url: str, *, body: dict | None = None, timeout: int = 25) -> dict[str, Any]:
+def _request_json(
+    method: str, url: str, *, body: dict | None = None, timeout: int = 25
+) -> dict[str, Any]:
     sk = _get_secret_key()
     data = None
     if body is not None:
@@ -84,7 +86,12 @@ def _request_json(method: str, url: str, *, body: dict | None = None, timeout: i
 
         if parsed_any.get("kind") == "json":
             j = parsed_any.get("json") or {}
-            msg = j.get("message") or j.get("error") or j.get("status") or "Paystack rejected request"
+            msg = (
+                j.get("message")
+                or j.get("error")
+                or j.get("status")
+                or "Paystack rejected request"
+            )
             raise RuntimeError(f"Paystack HTTPError: {e.code} {msg}") from e
 
         preview = _safe_preview(parsed_any.get("raw") or str(e))
@@ -95,7 +102,9 @@ def _request_json(method: str, url: str, *, body: dict | None = None, timeout: i
         raise RuntimeError(f"Paystack request failed: {e}") from e
 
     if parsed_any.get("kind") != "json":
-        raise RuntimeError(f"Paystack returned non-JSON: {_safe_preview(parsed_any.get('raw') or '')}")
+        raise RuntimeError(
+            f"Paystack returned non-JSON: {_safe_preview(parsed_any.get('raw') or '')}"
+        )
 
     return parsed_any.get("json") or {}
 
@@ -120,7 +129,9 @@ def paystack_initialize_transaction(
     if metadata:
         payload["metadata"] = metadata
 
-    parsed = _request_json("POST", f"{PAYSTACK_BASE}/transaction/initialize", body=payload, timeout=25)
+    parsed = _request_json(
+        "POST", f"{PAYSTACK_BASE}/transaction/initialize", body=payload, timeout=25
+    )
 
     if not parsed.get("status"):
         raise RuntimeError(parsed.get("message") or "Paystack init rejected")
@@ -139,9 +150,18 @@ def verify_paystack_signature(*, raw_body: bytes, signature: str | None) -> bool
 def verify_paystack_transaction(*, reference: str) -> dict:
     ref = str(reference or "").strip()
     if not ref:
-        return {"ok": False, "status": "", "amount": None, "currency": None, "reference": "", "raw": {}}
+        return {
+            "ok": False,
+            "status": "",
+            "amount": None,
+            "currency": None,
+            "reference": "",
+            "raw": {},
+        }
 
-    raw = _request_json("GET", f"{PAYSTACK_BASE}/transaction/verify/{ref}", body=None, timeout=25)
+    raw = _request_json(
+        "GET", f"{PAYSTACK_BASE}/transaction/verify/{ref}", body=None, timeout=25
+    )
 
     ok = bool(raw.get("status"))
     data = raw.get("data") or {}

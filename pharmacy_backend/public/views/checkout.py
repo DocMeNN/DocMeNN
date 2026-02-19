@@ -19,36 +19,31 @@ Security hardening:
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-
-from rest_framework.views import APIView
+from drf_spectacular.utils import OpenApiResponse, extend_schema
+from rest_framework import serializers, status
+from rest_framework.parsers import JSONParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework import status, serializers
-from rest_framework.parsers import JSONParser
 from rest_framework.throttling import AnonRateThrottle
+from rest_framework.views import APIView
 
-from drf_spectacular.utils import extend_schema, OpenApiResponse
-
-from store.models import Store
+from accounting.services.exceptions import (
+    AccountResolutionError,
+    IdempotencyError,
+    JournalEntryCreationError,
+)
+from accounting.services.posting import post_sale_to_ledger
 from products.models import Product
-from products.services.stock_fifo import deduct_stock_fifo, InsufficientStockError
-
+from products.services.stock_fifo import InsufficientStockError, deduct_stock_fifo
+from public.serializers import PublicCartItemSerializer
 from sales.models import Sale, SaleItem, SalePaymentAllocation
 from sales.serializers.sale import SaleSerializer
-
-from accounting.services.posting import post_sale_to_ledger
-from accounting.services.exceptions import (
-    JournalEntryCreationError,
-    IdempotencyError,
-    AccountResolutionError,
-)
-
-from public.serializers import PublicCartItemSerializer
+from store.models import Store
 
 TWOPLACES = Decimal("0.01")
 
@@ -113,7 +108,9 @@ def _validate_and_normalize_allocations(allocations) -> list[dict]:
 
 
 class PublicPaymentAllocationSerializer(serializers.Serializer):
-    method = serializers.ChoiceField(choices=["cash", "bank", "pos", "transfer", "credit"])
+    method = serializers.ChoiceField(
+        choices=["cash", "bank", "pos", "transfer", "credit"]
+    )
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     reference = serializers.CharField(required=False, allow_blank=True, default="")
     note = serializers.CharField(required=False, allow_blank=True, default="")
@@ -122,11 +119,19 @@ class PublicPaymentAllocationSerializer(serializers.Serializer):
 class PublicCheckoutInputSerializer(serializers.Serializer):
     store_id = serializers.UUIDField()
 
-    customer_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    customer_phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    customer_email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    customer_name = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
+    customer_phone = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
+    customer_email = serializers.EmailField(
+        required=False, allow_blank=True, allow_null=True
+    )
 
-    payment_method = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="online")
+    payment_method = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, default="online"
+    )
     items = PublicCartItemSerializer(many=True)
 
     payment_allocations = PublicPaymentAllocationSerializer(many=True, required=False)
@@ -137,7 +142,14 @@ class PublicReceiptItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SaleItem
-        fields = ["id", "product_id", "product_name", "quantity", "unit_price", "total_price"]
+        fields = [
+            "id",
+            "product_id",
+            "product_name",
+            "quantity",
+            "unit_price",
+            "total_price",
+        ]
         read_only_fields = fields
 
 
@@ -170,11 +182,19 @@ class PublicCheckoutView(APIView):
 
         items = data.get("items") or []
         if not items:
-            return Response({"detail": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
-        actor_user = request.user if getattr(request, "user", None) and request.user.is_authenticated else None
+        actor_user = (
+            request.user
+            if getattr(request, "user", None) and request.user.is_authenticated
+            else None
+        )
 
-        normalized_allocs = _validate_and_normalize_allocations(data.get("payment_allocations"))
+        normalized_allocs = _validate_and_normalize_allocations(
+            data.get("payment_allocations")
+        )
 
         payment_method = _normalize_payment_method(data.get("payment_method"))
         if normalized_allocs:
@@ -201,11 +221,15 @@ class PublicCheckoutView(APIView):
 
         try:
             for line in items:
-                product = get_object_or_404(Product, id=line["product_id"], is_active=True)
+                product = get_object_or_404(
+                    Product, id=line["product_id"], is_active=True
+                )
 
                 p_store_id = getattr(product, "store_id", None)
                 if p_store_id and p_store_id != store.id:
-                    raise serializers.ValidationError("Product belongs to a different store.")
+                    raise serializers.ValidationError(
+                        "Product belongs to a different store."
+                    )
 
                 qty = _to_int_qty(line["quantity"])
                 if qty <= 0:
@@ -250,13 +274,19 @@ class PublicCheckoutView(APIView):
         if hasattr(sale, "completed_at") and not getattr(sale, "completed_at", None):
             sale.completed_at = timezone.now()
 
-        sale.save(update_fields=["subtotal_amount", "total_amount", "status", "completed_at"])
+        sale.save(
+            update_fields=["subtotal_amount", "total_amount", "status", "completed_at"]
+        )
 
         if normalized_allocs:
-            alloc_total = _money(sum((a["amount"] for a in normalized_allocs), Decimal("0.00")))
+            alloc_total = _money(
+                sum((a["amount"] for a in normalized_allocs), Decimal("0.00"))
+            )
             if alloc_total != total:
                 return Response(
-                    {"detail": f"Split payment mismatch: allocations sum({alloc_total}) != sale total({total})."},
+                    {
+                        "detail": f"Split payment mismatch: allocations sum({alloc_total}) != sale total({total})."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -275,10 +305,17 @@ class PublicCheckoutView(APIView):
 
         try:
             post_sale_to_ledger(sale=sale)
-        except (JournalEntryCreationError, IdempotencyError, AccountResolutionError) as exc:
+        except (
+            JournalEntryCreationError,
+            IdempotencyError,
+            AccountResolutionError,
+        ) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
-            return Response({"detail": f"Ledger posting failed: {exc}"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": f"Ledger posting failed: {exc}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)
 

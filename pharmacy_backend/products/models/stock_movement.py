@@ -21,8 +21,8 @@ import uuid
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import models
 from django.core.exceptions import ValidationError
+from django.db import models
 
 from .product import Product
 from .stock_batch import StockBatch
@@ -50,8 +50,12 @@ class StockMovement(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="stock_movements")
-    batch = models.ForeignKey(StockBatch, on_delete=models.CASCADE, related_name="stock_movements")
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name="stock_movements"
+    )
+    batch = models.ForeignKey(
+        StockBatch, on_delete=models.CASCADE, related_name="stock_movements"
+    )
 
     movement_type = models.CharField(max_length=3, choices=MovementType.choices)
     reason = models.CharField(max_length=20, choices=Reason.choices)
@@ -113,7 +117,9 @@ class StockMovement(models.Model):
 
         expected_type = self.REASON_TO_MOVEMENT.get(self.reason)
         if expected_type and self.movement_type != expected_type:
-            raise ValidationError(f"{self.reason} requires movement_type={expected_type}")
+            raise ValidationError(
+                f"{self.reason} requires movement_type={expected_type}"
+            )
 
         if self.reason in {self.Reason.SALE, self.Reason.REFUND} and not self.sale_id:
             raise ValidationError("SALE / REFUND must reference a sale")
@@ -126,7 +132,9 @@ class StockMovement(models.Model):
                 .first()
             )
             if batch_cost is not None and self.unit_cost_snapshot is None:
-                raise ValidationError("unit_cost_snapshot is required when batch.unit_cost is set")
+                raise ValidationError(
+                    "unit_cost_snapshot is required when batch.unit_cost is set"
+                )
 
     def save(self, *args, **kwargs):
         if not self._state.adding:
@@ -144,11 +152,17 @@ class StockMovement(models.Model):
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        raise ValidationError("StockMovement records are immutable and cannot be deleted")
+        raise ValidationError(
+            "StockMovement records are immutable and cannot be deleted"
+        )
 
     @property
     def total_cost(self) -> Decimal:
-        unit_cost = self.unit_cost_snapshot if self.unit_cost_snapshot is not None else Decimal("0.00")
+        unit_cost = (
+            self.unit_cost_snapshot
+            if self.unit_cost_snapshot is not None
+            else Decimal("0.00")
+        )
         return unit_cost * Decimal(int(self.quantity or 0))
 
     def __str__(self):

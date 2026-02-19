@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
+from django.core.management.base import BaseCommand
 from django.db import transaction
-
 
 User = get_user_model()
 
@@ -43,12 +42,27 @@ class Command(BaseCommand):
                 ("admin", "admin_pharmacy@example.com", "Pharmacy", "Admin"),
                 ("pharmacist", "pharmacist@example.com", "Pharmacy", "Pharmacist"),
                 ("cashier", "cashier_pharmacy@example.com", "Pharmacy", "Cashier"),
-                ("reception", "reception_pharmacy@example.com", "Pharmacy", "Reception"),
+                (
+                    "reception",
+                    "reception_pharmacy@example.com",
+                    "Pharmacy",
+                    "Reception",
+                ),
             ],
             "supermarket": [
                 ("admin", "admin_supermarket@example.com", "Supermarket", "Admin"),
-                ("cashier", "cashier_supermarket@example.com", "Supermarket", "Cashier"),
-                ("reception", "reception_supermarket@example.com", "Supermarket", "Reception"),
+                (
+                    "cashier",
+                    "cashier_supermarket@example.com",
+                    "Supermarket",
+                    "Cashier",
+                ),
+                (
+                    "reception",
+                    "reception_supermarket@example.com",
+                    "Supermarket",
+                    "Reception",
+                ),
             ],
             "retail": [
                 ("admin", "admin_retail@example.com", "Retail", "Admin"),
@@ -97,9 +111,13 @@ class Command(BaseCommand):
                 user.set_password(password)
                 user.save(update_fields=["password"])
 
-        self.stdout.write(self.style.SUCCESS(
-            f"✔ Users seeded for {business}: {created} created, {updated} updated. "
-            f"Password set to: {password}"
-        ))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"✔ Users seeded for {business}: {created} created, {updated} updated. "
+                f"Password set to: {password}"
+            )
+        )
 
-        self.stdout.write("Next: login with one of the seeded emails in admin / swagger.")
+        self.stdout.write(
+            "Next: login with one of the seeded emails in admin / swagger."
+        )

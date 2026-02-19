@@ -24,4 +24,3 @@ class CanRefundSale(BasePermission):
             return False
 
         return getattr(user, "role", None) in self.allowed_roles
-

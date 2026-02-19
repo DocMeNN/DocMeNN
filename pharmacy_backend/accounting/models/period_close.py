@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models import Q, F
+from django.db.models import F, Q
 
 from accounting.models.chart import ChartOfAccounts
 from accounting.models.journal import JournalEntry

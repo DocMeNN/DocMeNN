@@ -44,7 +44,9 @@ class PaymentAttempt(models.Model):
         related_name="payment_attempts",
     )
 
-    provider = models.CharField(max_length=32, choices=PROVIDER_CHOICES, default=PROVIDER_PAYSTACK)
+    provider = models.CharField(
+        max_length=32, choices=PROVIDER_CHOICES, default=PROVIDER_PAYSTACK
+    )
 
     reference = models.CharField(
         max_length=128,
@@ -59,7 +61,9 @@ class PaymentAttempt(models.Model):
     )
     currency = models.CharField(max_length=8, default="NGN")
 
-    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_INITIATED)
+    status = models.CharField(
+        max_length=32, choices=STATUS_CHOICES, default=STATUS_INITIATED
+    )
 
     authorization_url = models.URLField(blank=True, default="")
     provider_payload = models.JSONField(default=dict, blank=True)

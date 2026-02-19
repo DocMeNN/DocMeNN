@@ -1,25 +1,35 @@
 # purchases/api/views.py
 
-from django.db import transaction, IntegrityError
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
+from django.db import IntegrityError, transaction
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.generics import GenericAPIView
-
-from drf_spectacular.utils import extend_schema
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from products.models.product import Product
-from purchases.models import Supplier, PurchaseInvoice, PurchaseInvoiceItem, SupplierPayment
 from purchases.api.serializers import (
-    SupplierSerializer,
     PurchaseInvoiceCreateSerializer,
     PurchaseInvoiceSerializer,
     ReceivePurchaseInvoiceSerializer,
     SupplierPaymentCreateSerializer,
     SupplierPaymentSerializer,
+    SupplierSerializer,
 )
-from purchases.services.receiving_service import receive_purchase_invoice, PurchaseReceivingError
-from purchases.services.payment_service import pay_supplier_invoice, SupplierPaymentError
+from purchases.models import (
+    PurchaseInvoice,
+    PurchaseInvoiceItem,
+    Supplier,
+    SupplierPayment,
+)
+from purchases.services.payment_service import (
+    SupplierPaymentError,
+    pay_supplier_invoice,
+)
+from purchases.services.receiving_service import (
+    PurchaseReceivingError,
+    receive_purchase_invoice,
+)
 
 
 class SupplierListCreateView(GenericAPIView):
@@ -28,14 +38,22 @@ class SupplierListCreateView(GenericAPIView):
     @extend_schema(tags=["purchases"], responses=SupplierSerializer(many=True))
     def get(self, request):
         qs = Supplier.objects.filter(is_active=True).order_by("name")
-        return Response(SupplierSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(
+            SupplierSerializer(qs, many=True).data, status=status.HTTP_200_OK
+        )
 
-    @extend_schema(tags=["purchases"], request=SupplierSerializer, responses={201: SupplierSerializer})
+    @extend_schema(
+        tags=["purchases"],
+        request=SupplierSerializer,
+        responses={201: SupplierSerializer},
+    )
     def post(self, request):
         s = SupplierSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         supplier = s.save()
-        return Response(SupplierSerializer(supplier).data, status=status.HTTP_201_CREATED)
+        return Response(
+            SupplierSerializer(supplier).data, status=status.HTTP_201_CREATED
+        )
 
 
 class PurchaseInvoiceListCreateView(GenericAPIView):
@@ -44,14 +62,19 @@ class PurchaseInvoiceListCreateView(GenericAPIView):
     @extend_schema(tags=["purchases"], responses=PurchaseInvoiceSerializer(many=True))
     def get(self, request):
         qs = (
-            PurchaseInvoice.objects
-            .select_related("supplier")
+            PurchaseInvoice.objects.select_related("supplier")
             .prefetch_related("items", "items__product")
             .order_by("-created_at")
         )
-        return Response(PurchaseInvoiceSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(
+            PurchaseInvoiceSerializer(qs, many=True).data, status=status.HTTP_200_OK
+        )
 
-    @extend_schema(tags=["purchases"], request=PurchaseInvoiceCreateSerializer, responses={201: PurchaseInvoiceSerializer})
+    @extend_schema(
+        tags=["purchases"],
+        request=PurchaseInvoiceCreateSerializer,
+        responses={201: PurchaseInvoiceSerializer},
+    )
     @transaction.atomic
     def post(self, request):
         s = PurchaseInvoiceCreateSerializer(data=request.data)
@@ -61,7 +84,9 @@ class PurchaseInvoiceListCreateView(GenericAPIView):
         try:
             supplier = Supplier.objects.get(id=data["supplier_id"], is_active=True)
         except Supplier.DoesNotExist:
-            return Response({"detail": "Supplier not found"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Supplier not found"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         try:
             invoice = PurchaseInvoice.objects.create(
@@ -95,12 +120,13 @@ class PurchaseInvoiceListCreateView(GenericAPIView):
             )
 
         invoice = (
-            PurchaseInvoice.objects
-            .select_related("supplier")
+            PurchaseInvoice.objects.select_related("supplier")
             .prefetch_related("items", "items__product")
             .get(id=invoice.id)
         )
-        return Response(PurchaseInvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
+        return Response(
+            PurchaseInvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED
+        )
 
 
 class PurchaseInvoiceReceiveView(GenericAPIView):
@@ -130,12 +156,12 @@ class SupplierPaymentListCreateView(GenericAPIView):
 
     @extend_schema(tags=["purchases"], responses=SupplierPaymentSerializer(many=True))
     def get(self, request):
-        qs = (
-            SupplierPayment.objects
-            .select_related("supplier", "invoice")
-            .order_by("-created_at")
+        qs = SupplierPayment.objects.select_related("supplier", "invoice").order_by(
+            "-created_at"
         )
-        return Response(SupplierPaymentSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(
+            SupplierPaymentSerializer(qs, many=True).data, status=status.HTTP_200_OK
+        )
 
     @extend_schema(tags=["purchases"], request=SupplierPaymentCreateSerializer)
     def post(self, request):

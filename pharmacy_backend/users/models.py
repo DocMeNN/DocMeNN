@@ -1,12 +1,13 @@
 # users/models.py
 
 import uuid
-from django.db import models
+
 from django.contrib.auth.models import (
     AbstractBaseUser,
-    PermissionsMixin,
     BaseUserManager,
+    PermissionsMixin,
 )
+from django.db import models
 
 
 # ---------------- USER MANAGER ----------------
@@ -30,7 +31,9 @@ class UserManager(BaseUserManager):
             if username:
                 email = f"{username.lower()}@local.test"
             else:
-                raise ValueError("An email address is required (or provide username=...)")
+                raise ValueError(
+                    "An email address is required (or provide username=...)"
+                )
 
         email = self.normalize_email(email)
         extra_fields.setdefault("is_active", True)
@@ -65,7 +68,6 @@ class UserManager(BaseUserManager):
 
 # ---------------- USER MODEL ----------------
 class User(AbstractBaseUser, PermissionsMixin):
-
     ROLE_CHOICES = [
         ("admin", "Admin"),
         ("pharmacist", "Pharmacist"),

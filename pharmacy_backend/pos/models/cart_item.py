@@ -17,10 +17,11 @@ Rules:
 import uuid
 from decimal import Decimal
 
-from django.db import models
 from django.core.exceptions import ValidationError
+from django.db import models
 
 from products.models import Product
+
 from .cart import Cart
 
 
@@ -72,7 +73,9 @@ class CartItem(models.Model):
             raise ValidationError({"quantity": "Quantity must be greater than zero"})
 
         if self.unit_price is None or self.unit_price <= 0:
-            raise ValidationError({"unit_price": "Unit price must be greater than zero"})
+            raise ValidationError(
+                {"unit_price": "Unit price must be greater than zero"}
+            )
 
     def save(self, *args, **kwargs):
         self.full_clean()

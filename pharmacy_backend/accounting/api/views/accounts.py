@@ -13,16 +13,15 @@ Phase 5 Hardening:
 - No chart_id parameter: prevents chart enumeration
 """
 
+from drf_spectacular.utils import extend_schema
+from rest_framework import status
+from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.generics import GenericAPIView
-from rest_framework import status
 
-from drf_spectacular.utils import extend_schema
-
+from accounting.api.serializers.accounts import AccountListSerializer
 from accounting.models.account import Account
 from accounting.services.account_resolver import get_active_chart
-from accounting.api.serializers.accounts import AccountListSerializer
 
 
 class ActiveChartAccountsView(GenericAPIView):
@@ -41,10 +40,8 @@ class ActiveChartAccountsView(GenericAPIView):
 
         chart = get_active_chart()
 
-        qs = (
-            Account.objects
-            .filter(chart=chart, is_active=True)
-            .order_by("code")
-        )
+        qs = Account.objects.filter(chart=chart, is_active=True).order_by("code")
 
-        return Response(AccountListSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(
+            AccountListSerializer(qs, many=True).data, status=status.HTTP_200_OK
+        )

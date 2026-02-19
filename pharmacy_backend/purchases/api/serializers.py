@@ -2,7 +2,11 @@
 
 from rest_framework import serializers
 
-from purchases.models import Supplier, PurchaseInvoice, PurchaseInvoiceItem, SupplierPayment
+from purchases.models import (
+    PurchaseInvoice,
+    Supplier,
+    SupplierPayment,
+)
 
 
 class SupplierSerializer(serializers.ModelSerializer):
@@ -52,8 +56,12 @@ class PurchaseInvoiceSerializer(serializers.ModelSerializer):
 
 
 class ReceivePurchaseInvoiceSerializer(serializers.Serializer):
-    inventory_account_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    payable_account_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    inventory_account_code = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
+    payable_account_code = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
 
     def validate(self, attrs):
         inv = attrs.get("inventory_account_code")

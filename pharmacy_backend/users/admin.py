@@ -37,7 +37,15 @@ class UserAdmin(DjangoUserAdmin):
         ("Profile", {"fields": ("first_name", "last_name", "role")}),
         (
             "Permissions",
-            {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")},
+            {
+                "fields": (
+                    "is_active",
+                    "is_staff",
+                    "is_superuser",
+                    "groups",
+                    "user_permissions",
+                )
+            },
         ),
     )
 
@@ -46,7 +54,14 @@ class UserAdmin(DjangoUserAdmin):
             None,
             {
                 "classes": ("wide",),
-                "fields": ("email", "password1", "password2", "role", "is_staff", "is_active"),
+                "fields": (
+                    "email",
+                    "password1",
+                    "password2",
+                    "role",
+                    "is_staff",
+                    "is_active",
+                ),
             },
         ),
     )

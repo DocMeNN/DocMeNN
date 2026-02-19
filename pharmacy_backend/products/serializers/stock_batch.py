@@ -48,7 +48,7 @@ class StockBatchSerializer(serializers.ModelSerializer):
     unit_cost = serializers.DecimalField(
         max_digits=12,
         decimal_places=2,
-        required=False,   # enforced on create in validate()
+        required=False,  # enforced on create in validate()
         allow_null=True,  # supports legacy rows already in DB
     )
 
@@ -84,7 +84,9 @@ class StockBatchSerializer(serializers.ModelSerializer):
         except Exception:
             raise serializers.ValidationError("quantity_received must be an integer")
         if v <= 0:
-            raise serializers.ValidationError("quantity_received must be greater than zero")
+            raise serializers.ValidationError(
+                "quantity_received must be greater than zero"
+            )
         return v
 
     def validate_expiry_date(self, value):
@@ -100,7 +102,9 @@ class StockBatchSerializer(serializers.ModelSerializer):
         try:
             return Decimal(str(raw))
         except Exception:
-            raise serializers.ValidationError({"unit_cost": "unit_cost must be a valid decimal value"})
+            raise serializers.ValidationError(
+                {"unit_cost": "unit_cost must be a valid decimal value"}
+            )
 
     def _normalize_batch_number(self, raw):
         """
@@ -130,26 +134,36 @@ class StockBatchSerializer(serializers.ModelSerializer):
             bad = sorted(list(incoming.intersection(forbidden)))
             if bad:
                 raise serializers.ValidationError(
-                    {"detail": f"Field(s) {bad} cannot be edited directly. Use actions/services for controlled ops."}
+                    {
+                        "detail": f"Field(s) {bad} cannot be edited directly. Use actions/services for controlled ops."
+                    }
                 )
 
             if "batch_number" in attrs:
                 bn = (attrs.get("batch_number") or "").strip()
                 if not bn:
-                    raise serializers.ValidationError({"batch_number": "batch_number cannot be blank"})
+                    raise serializers.ValidationError(
+                        {"batch_number": "batch_number cannot be blank"}
+                    )
                 attrs["batch_number"] = bn
 
             return attrs
 
         # POST rules
         # batch_number optional: normalize to None so service generates it
-        attrs["batch_number"] = self._normalize_batch_number(attrs.get("batch_number", None))
+        attrs["batch_number"] = self._normalize_batch_number(
+            attrs.get("batch_number", None)
+        )
 
         unit_cost = self._coerce_unit_cost(attrs.get("unit_cost"))
         if unit_cost is None:
-            raise serializers.ValidationError({"unit_cost": "unit_cost is required (purchase-led stock intake)."})
+            raise serializers.ValidationError(
+                {"unit_cost": "unit_cost is required (purchase-led stock intake)."}
+            )
         if unit_cost <= Decimal("0.00"):
-            raise serializers.ValidationError({"unit_cost": "unit_cost must be greater than zero"})
+            raise serializers.ValidationError(
+                {"unit_cost": "unit_cost must be greater than zero"}
+            )
         attrs["unit_cost"] = unit_cost
 
         return attrs
@@ -165,7 +179,9 @@ class StockBatchSerializer(serializers.ModelSerializer):
         try:
             product = Product.objects.get(id=product_id, is_active=True)
         except Product.DoesNotExist:
-            raise serializers.ValidationError({"product_id": "Invalid or inactive product ID"})
+            raise serializers.ValidationError(
+                {"product_id": "Invalid or inactive product ID"}
+            )
 
         batch = StockBatch.objects.create(
             product=product,

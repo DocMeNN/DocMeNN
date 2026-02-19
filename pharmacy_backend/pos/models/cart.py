@@ -21,10 +21,10 @@ IMPORTANT (Back-compat):
 import uuid
 from decimal import Decimal
 
-from django.db import models
 from django.conf import settings
-from django.db.models import Sum, F
 from django.core.exceptions import ValidationError
+from django.db import models
+from django.db.models import F, Sum
 
 from store.models import Store
 

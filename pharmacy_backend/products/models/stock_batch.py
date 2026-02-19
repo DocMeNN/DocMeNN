@@ -16,9 +16,9 @@ Compatibility goals (tests + legacy):
 import uuid
 from decimal import Decimal
 
-from django.db import models
-from django.db.models import Q, F
 from django.core.exceptions import ValidationError
+from django.db import models
+from django.db.models import F, Q
 
 from .product import Product
 
@@ -128,17 +128,27 @@ class StockBatch(models.Model):
 
     def clean(self):
         if self.quantity_received is None or int(self.quantity_received) <= 0:
-            raise ValidationError({"quantity_received": "quantity_received must be greater than zero"})
+            raise ValidationError(
+                {"quantity_received": "quantity_received must be greater than zero"}
+            )
 
         # Allow save() to auto-fill remaining on create; but once set, validate.
         if self.quantity_remaining is None:
-            raise ValidationError({"quantity_remaining": "quantity_remaining is required"})
+            raise ValidationError(
+                {"quantity_remaining": "quantity_remaining is required"}
+            )
 
         if int(self.quantity_remaining) < 0:
-            raise ValidationError({"quantity_remaining": "quantity_remaining cannot be negative"})
+            raise ValidationError(
+                {"quantity_remaining": "quantity_remaining cannot be negative"}
+            )
 
         if int(self.quantity_remaining) > int(self.quantity_received):
-            raise ValidationError({"quantity_remaining": "quantity_remaining cannot exceed quantity_received"})
+            raise ValidationError(
+                {
+                    "quantity_remaining": "quantity_remaining cannot exceed quantity_received"
+                }
+            )
 
         if not self.expiry_date:
             raise ValidationError({"expiry_date": "expiry_date is required"})
@@ -155,7 +165,9 @@ class StockBatch(models.Model):
         # If both present, they must match
         if self.store_id and getattr(self.product, "store_id", None):
             if self.store_id != self.product.store_id:
-                raise ValidationError({"store": "StockBatch.store must match Product.store"})
+                raise ValidationError(
+                    {"store": "StockBatch.store must match Product.store"}
+                )
 
     def save(self, *args, **kwargs):
         # Auto-generate a batch number if blank (test compatibility)
@@ -177,17 +189,25 @@ class StockBatch(models.Model):
                 self.quantity_remaining = int(self.quantity_received)
 
         if not self._state.adding:
-            original = StockBatch.objects.only("quantity_received", "unit_cost").get(pk=self.pk)
+            original = StockBatch.objects.only("quantity_received", "unit_cost").get(
+                pk=self.pk
+            )
 
             if self.quantity_received != original.quantity_received:
-                raise ValidationError({"quantity_received": "quantity_received is immutable"})
+                raise ValidationError(
+                    {"quantity_received": "quantity_received is immutable"}
+                )
 
             if original.unit_cost is not None:
                 if self.unit_cost != original.unit_cost:
-                    raise ValidationError({"unit_cost": "unit_cost is immutable once set"})
+                    raise ValidationError(
+                        {"unit_cost": "unit_cost is immutable once set"}
+                    )
             else:
                 if self.unit_cost is not None and self.unit_cost <= Decimal("0.00"):
-                    raise ValidationError({"unit_cost": "unit_cost must be greater than zero"})
+                    raise ValidationError(
+                        {"unit_cost": "unit_cost must be greater than zero"}
+                    )
 
         self.is_active = int(self.quantity_remaining or 0) > 0
 
@@ -198,7 +218,9 @@ class StockBatch(models.Model):
         from products.models.stock_movement import StockMovement
 
         if StockMovement.objects.filter(batch=self).exists():
-            raise ValidationError("Cannot delete StockBatch: it has StockMovement audit history.")
+            raise ValidationError(
+                "Cannot delete StockBatch: it has StockMovement audit history."
+            )
         return super().delete(*args, **kwargs)
 
     def __str__(self):

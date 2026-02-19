@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from django.db import transaction
 from django.core.exceptions import ValidationError
+from django.db import transaction
 
 from products.models import StockBatch, StockMovement
 
