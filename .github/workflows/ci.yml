@@ -26,14 +26,17 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          # ✅ Use the authoritative requirements file at repo root
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            pharmacy_backend/requirements.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # ✅ Install from repo root requirements, not pharmacy_backend/requirements.txt
+          # Install root deps (if you keep shared deps here)
           pip install -r ../requirements.txt
+          # Install backend deps (this is where drf_spectacular likely lives)
+          pip install -r requirements.txt
           pip install ruff
 
       - name: Django system checks
