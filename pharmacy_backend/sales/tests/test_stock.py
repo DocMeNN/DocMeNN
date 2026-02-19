@@ -1,9 +1,14 @@
+# sales/tests/test_stock.py
+
 from django.test import TestCase
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
+from decimal import Decimal
+
 from products.models import Product, StockBatch
-from products.services.stock_fifo import restore_stock_from_sale
+from products.models.stock_movement import StockMovement
+from products.services.stock_fifo import deduct_stock_fifo, restore_stock_from_sale
 
 from sales.models.sale import Sale
 from sales.models.sale_item import SaleItem
@@ -32,36 +37,45 @@ class StockLedgerTests(TestCase):
         self.product = Product.objects.create(
             sku="SKU-200",
             name="Ibuprofen",
-            unit_price="75.00",
+            unit_price=Decimal("75.00"),
+            is_active=True,
         )
 
         # ----------------------------------
         # FIFO Batches (older first)
         # ----------------------------------
+        today = timezone.now().date()
+
         self.old_batch = StockBatch.objects.create(
             product=self.product,
+            batch_number="OLD-BATCH",
+            quantity_received=3,
             quantity_remaining=3,
-            expiry_date=timezone.now().date(),
+            unit_cost=Decimal("40.00"),
+            expiry_date=today,
             is_active=True,
         )
 
         self.new_batch = StockBatch.objects.create(
             product=self.product,
+            batch_number="NEW-BATCH",
+            quantity_received=5,
             quantity_remaining=5,
-            expiry_date=timezone.now().date(),
+            unit_cost=Decimal("45.00"),
+            expiry_date=today,
             is_active=True,
         )
 
         # ----------------------------------
-        # Completed Sale (sold from old batch)
+        # Completed Sale (2 units)
         # ----------------------------------
         self.sale = Sale.objects.create(
             invoice_no="INV-200",
             user=self.user,
             payment_method="cash",
             status=Sale.STATUS_COMPLETED,
-            subtotal_amount="150.00",
-            total_amount="150.00",
+            subtotal_amount=Decimal("150.00"),
+            total_amount=Decimal("150.00"),
             completed_at=timezone.now(),
         )
 
@@ -70,8 +84,20 @@ class StockLedgerTests(TestCase):
             product=self.product,
             batch_reference=self.old_batch,
             quantity=2,
-            unit_price="75.00",
-            total_price="150.00",
+            unit_price=Decimal("75.00"),
+            total_price=Decimal("150.00"),
+        )
+
+        # -------------------------------------------------------
+        # Critical: create SALE stock movements (ledger history)
+        # The restore service restores using StockMovement history.
+        # -------------------------------------------------------
+        deduct_stock_fifo(
+            product=self.product,
+            quantity=self.item.quantity,
+            user=self.user,
+            sale=self.sale,
+            store=None,  # single-store test mode
         )
 
     # ======================================================
@@ -79,19 +105,23 @@ class StockLedgerTests(TestCase):
     # ======================================================
 
     def test_restore_stock_from_sale(self):
-        restore_stock_from_sale(
-            product=self.product,
-            quantity=self.item.quantity,
+        restored = restore_stock_from_sale(
+            sale=self.sale,
             user=self.user,
-            reference_sale=self.sale,
+            items=None,  # full restore
         )
+
+        self.assertTrue(restored)
 
         self.old_batch.refresh_from_db()
         self.new_batch.refresh_from_db()
 
-        # Restored only to original batch
-        self.assertEqual(self.old_batch.quantity_remaining, 5)
-        self.assertEqual(self.new_batch.quantity_remaining, 5)
+        # Original old batch: 3, sold 2 -> remaining 1
+        # After restore, it returns to 3
+        self.assertEqual(int(self.old_batch.quantity_remaining), 3)
+
+        # New batch untouched
+        self.assertEqual(int(self.new_batch.quantity_remaining), 5)
 
     # ======================================================
     # FIFO SAFETY
@@ -99,34 +129,41 @@ class StockLedgerTests(TestCase):
 
     def test_fifo_batch_is_respected_on_restore(self):
         restore_stock_from_sale(
-            product=self.product,
-            quantity=self.item.quantity,
+            sale=self.sale,
             user=self.user,
-            reference_sale=self.sale,
+            items=None,
         )
 
-        self.old_batch.refresh_from_db()
+        # Refund movements must reference the same batch used in sale deduction
+        refund_mvs = StockMovement.objects.filter(
+            sale=self.sale,
+            reason=StockMovement.Reason.REFUND,
+            movement_type=StockMovement.MovementType.IN,
+            batch=self.old_batch,
+        )
+        self.assertGreater(refund_mvs.count(), 0)
 
-        # Restore goes back to the same batch used in sale
-        self.assertEqual(self.old_batch.quantity_remaining, 5)
+        self.old_batch.refresh_from_db()
+        self.assertEqual(int(self.old_batch.quantity_remaining), 3)
 
     # ======================================================
     # SAFETY INVARIANTS
     # ======================================================
 
     def test_stock_never_negative(self):
-        self.assertGreaterEqual(self.old_batch.quantity_remaining, 0)
-        self.assertGreaterEqual(self.new_batch.quantity_remaining, 0)
+        self.old_batch.refresh_from_db()
+        self.new_batch.refresh_from_db()
+
+        self.assertGreaterEqual(int(self.old_batch.quantity_remaining), 0)
+        self.assertGreaterEqual(int(self.new_batch.quantity_remaining), 0)
 
     def test_stock_not_over_restored(self):
-        restore_stock_from_sale(
-            product=self.product,
-            quantity=self.item.quantity,
-            user=self.user,
-            reference_sale=self.sale,
-        )
+        # First restore OK
+        restore_stock_from_sale(sale=self.sale, user=self.user, items=None)
 
         self.old_batch.refresh_from_db()
+        self.assertEqual(int(self.old_batch.quantity_remaining), 3)
 
-        # Original was 3, sold 2 → restored back to 5
-        self.assertEqual(self.old_batch.quantity_remaining, 5)
+        # Second restore should fail (nothing refundable left)
+        with self.assertRaises(Exception):
+            restore_stock_from_sale(sale=self.sale, user=self.user, items=None)

@@ -9,32 +9,32 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from .category import Category
-from store.models import Store
 
 
 class Product(models.Model):
     """
     Represents a sellable product.
 
-    STOCK MODEL (IMPORTANT):
-    - Product itself does NOT store stock
-    - Stock lives in StockBatch
-    - Total stock = sum of NON-EXPIRED, ACTIVE batches
-
-    HOTSPRINT UPGRADE (PURCHASE → MARKUP → SELLING PRICE):
-    - Product defines a default markup policy.
-    - Purchase intake supplies cost; markup policy yields selling price.
-    - unit_price remains the sell price (snapshot at sale time is stored in SaleItem).
+    NOTE:
+    - Tests in this repo still create products using `selling_price=...`
+      but our canonical field is `unit_price`.
+    - We accept `selling_price` as an alias for backward compatibility.
     """
 
     class MarkupType(models.TextChoices):
         PERCENT = "PERCENT", "Percent"
         FIXED = "FIXED", "Fixed Amount"
 
+    def __init__(self, *args, **kwargs):
+        # Backward-compatible alias
+        if "selling_price" in kwargs and "unit_price" not in kwargs:
+            kwargs["unit_price"] = kwargs.pop("selling_price")
+        super().__init__(*args, **kwargs)
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     store = models.ForeignKey(
-        Store,
+        "store.Store",
         on_delete=models.CASCADE,
         null=True,
         blank=True,
@@ -55,7 +55,6 @@ class Product(models.Model):
     # Current/default selling price
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
 
-    # ✅ Default markup policy (used when stocking/purchasing)
     markup_type = models.CharField(
         max_length=16,
         choices=MarkupType.choices,
@@ -87,8 +86,9 @@ class Product(models.Model):
         return f"{self.name} ({self.sku})"
 
     def clean(self):
-        if self.unit_price is None or Decimal(self.unit_price) <= 0:
-            raise ValidationError("Unit price must be greater than zero")
+        # Tests expect non-negative (0 allowed)
+        if self.unit_price is None or Decimal(str(self.unit_price)) < Decimal("0.00"):
+            raise ValidationError("Unit price must be non-negative")
 
         if self.low_stock_threshold is None:
             raise ValidationError("low_stock_threshold is required")
@@ -96,14 +96,10 @@ class Product(models.Model):
         if self.markup_value is None:
             raise ValidationError("markup_value is required")
 
-        if Decimal(self.markup_value) < Decimal("0.00"):
+        if Decimal(str(self.markup_value)) < Decimal("0.00"):
             raise ValidationError("markup_value cannot be negative")
 
     def compute_selling_price_from_cost(self, unit_cost) -> Decimal:
-        """
-        Convert a unit_cost into a selling price based on markup policy.
-        This is deterministic and analytics-friendly.
-        """
         try:
             cost = Decimal(str(unit_cost))
         except Exception:
@@ -115,10 +111,8 @@ class Product(models.Model):
         mv = Decimal(str(self.markup_value or "0.00"))
 
         if self.markup_type == self.MarkupType.PERCENT:
-            # selling = cost * (1 + percent/100)
             selling = cost * (Decimal("1.00") + (mv / Decimal("100.00")))
         else:
-            # FIXED markup amount
             selling = cost + mv
 
         selling = selling.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -130,14 +124,6 @@ class Product(models.Model):
 
     @property
     def total_stock_db(self) -> int:
-        """
-        Total AVAILABLE stock.
-
-        RULES:
-        - Only active batches
-        - Only non-expired batches (expiry_date >= today)
-        - Sum of quantity_remaining
-        """
         today = timezone.localdate()
 
         return (

@@ -11,9 +11,26 @@ from django.contrib.auth.models import (
 
 # ---------------- USER MANAGER ----------------
 class UserManager(BaseUserManager):
-    def create_user(self, email, password=None, **extra_fields):
+    def create_user(self, email=None, password=None, **extra_fields):
+        """
+        Backward-compatible user creation.
+
+        Tests in this project still call:
+            create_user(username="...", password="...")
+
+        But our canonical auth identity is email.
+
+        Rules:
+        - If email is missing but username is provided, generate email as: <username>@local.test
+        - Strip out unknown fields like 'username' so model init doesn't crash.
+        """
+        username = (extra_fields.pop("username", "") or "").strip()
+
         if not email:
-            raise ValueError("An email address is required")
+            if username:
+                email = f"{username.lower()}@local.test"
+            else:
+                raise ValueError("An email address is required (or provide username=...)")
 
         email = self.normalize_email(email)
         extra_fields.setdefault("is_active", True)
@@ -43,7 +60,7 @@ class UserManager(BaseUserManager):
         if extra_fields.get("is_superuser") is not True:
             raise ValueError("Superuser must have is_superuser=True")
 
-        return self.create_user(email, password, **extra_fields)
+        return self.create_user(email=email, password=password, **extra_fields)
 
 
 # ---------------- USER MODEL ----------------

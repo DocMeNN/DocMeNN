@@ -1,11 +1,11 @@
-# pos/serializers/cart_item.py
-
 """
+PATH: pos/serializers/cart_item.py
+
 CART ITEM SERIALIZER (PHASE 1)
 
 Purpose:
 - Serialize cart line items for POS UI.
-- Enforce money safety: unit_price is read-only (server-controlled snapshot).
+- unit_price is read-only (server-controlled snapshot).
 - Provide stable fields for frontend wiring (product_id, product_name).
 """
 
@@ -14,12 +14,7 @@ from pos.models import CartItem
 
 
 class CartItemSerializer(serializers.ModelSerializer):
-    """
-    Serializer for individual cart line items.
-    """
-
-    # Stable frontend fields
-    product_id = serializers.UUIDField(read_only=True)
+    product_id = serializers.UUIDField(source="product.id", read_only=True)
     product_name = serializers.CharField(source="product.name", read_only=True)
 
     unit_price = serializers.DecimalField(

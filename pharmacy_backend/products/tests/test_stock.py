@@ -1,8 +1,12 @@
+# products/tests/test_stock.py
+
+from datetime import date, timedelta
+from decimal import Decimal
+
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 
-from products.models import Product, ProductBatch
-
+from products.models import Product, StockBatch
 
 User = get_user_model()
 
@@ -18,27 +22,39 @@ class ProductStockTests(TestCase):
     """
 
     def setUp(self):
+        # Your CI requires email for user creation (seen in failures),
+        # so always provide it.
         self.user = User.objects.create_user(
-            username="stock_admin",
+            email="stock_admin@example.com",
+            username="stock_admin" if hasattr(User, "username") else None,
             password="password123",
         )
+
+        # If the model doesn't have username, passing None could break create_user,
+        # so we guard it properly:
+        if getattr(self.user, "username", None) in (None, "") and hasattr(User, "username"):
+            self.user.username = "stock_admin"
+            self.user.save(update_fields=["username"])
 
         self.product = Product.objects.create(
             name="Paracetamol 500mg",
             sku="PCM-500",
-            selling_price=100,
+            unit_price=Decimal("100.00"),
+            is_active=True,
         )
 
-        self.batch = ProductBatch.objects.create(
+        self.batch = StockBatch.objects.create(
             product=self.product,
-            batch_no="BATCH-001",
-            quantity=50,
-            expiry_date="2030-12-31",
+            batch_number="BATCH-001",
+            quantity_received=50,
+            quantity_remaining=50,
+            unit_cost=Decimal("50.00"),
+            expiry_date=date.today() + timedelta(days=365),
         )
 
     def test_product_has_initial_stock(self):
         """Product batch should start with a positive stock."""
-        self.assertGreaterEqual(self.batch.quantity, 0)
+        self.assertGreaterEqual(int(self.batch.quantity_remaining), 0)
 
     def test_batch_is_linked_to_correct_product(self):
         """Batch must always belong to its product."""
@@ -46,21 +62,22 @@ class ProductStockTests(TestCase):
 
     def test_multiple_batches_allowed_for_same_product(self):
         """A product can safely have multiple batches."""
-        batch2 = ProductBatch.objects.create(
+        StockBatch.objects.create(
             product=self.product,
-            batch_no="BATCH-002",
-            quantity=30,
-            expiry_date="2031-01-01",
+            batch_number="BATCH-002",
+            quantity_received=30,
+            quantity_remaining=30,
+            unit_cost=Decimal("45.00"),
+            expiry_date=date.today() + timedelta(days=400),
         )
 
-        self.assertEqual(
-            self.product.batches.count(),
-            2,
-        )
+        # Default reverse relation if related_name isn't explicitly set:
+        self.assertEqual(self.product.stock_batches.count(), 2)
+
 
     def test_stock_never_negative(self):
         """System must never allow negative stock values."""
-        self.batch.quantity = 0
-        self.batch.save()
+        self.batch.quantity_remaining = 0
+        self.batch.save(update_fields=["quantity_remaining"])
 
-        self.assertGreaterEqual(self.batch.quantity, 0)
+        self.assertGreaterEqual(int(self.batch.quantity_remaining), 0)

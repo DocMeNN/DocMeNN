@@ -1,3 +1,7 @@
+# products/tests/test_products.py
+
+from decimal import Decimal
+
 from django.test import TestCase
 from django.db import IntegrityError
 
@@ -19,7 +23,8 @@ class ProductModelTests(TestCase):
         product = Product.objects.create(
             name="Amoxicillin 250mg",
             sku="AMX-250",
-            selling_price=250,
+            unit_price=Decimal("250.00"),
+            is_active=True,
         )
 
         self.assertEqual(product.name, "Amoxicillin 250mg")
@@ -30,14 +35,16 @@ class ProductModelTests(TestCase):
         Product.objects.create(
             name="Ibuprofen",
             sku="IBU-200",
-            selling_price=200,
+            unit_price=Decimal("200.00"),
+            is_active=True,
         )
 
         with self.assertRaises(IntegrityError):
             Product.objects.create(
                 name="Ibuprofen Duplicate",
                 sku="IBU-200",
-                selling_price=220,
+                unit_price=Decimal("220.00"),
+                is_active=True,
             )
 
     def test_product_price_is_non_negative(self):
@@ -45,17 +52,19 @@ class ProductModelTests(TestCase):
         product = Product.objects.create(
             name="Vitamin C",
             sku="VIT-C",
-            selling_price=0,
+            unit_price=Decimal("0.00"),
+            is_active=True,
         )
 
-        self.assertGreaterEqual(product.selling_price, 0)
+        self.assertGreaterEqual(product.unit_price, Decimal("0.00"))
 
     def test_product_string_representation(self):
         """__str__ should be human readable."""
         product = Product.objects.create(
             name="Cough Syrup",
             sku="COUGH-100",
-            selling_price=500,
+            unit_price=Decimal("500.00"),
+            is_active=True,
         )
 
         self.assertIn("Cough Syrup", str(product))

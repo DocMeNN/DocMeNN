@@ -1,3 +1,5 @@
+# sales/tests/test_sales.py
+
 from django.test import TestCase
 from django.utils import timezone
 from django.contrib.auth import get_user_model
@@ -35,11 +37,15 @@ class SaleModelTests(TestCase):
             sku="SKU-100",
             name="Paracetamol",
             unit_price="50.00",
+            is_active=True,
         )
 
         self.batch = StockBatch.objects.create(
             product=self.product,
+            batch_number="BATCH-100",
+            quantity_received=20,
             quantity_remaining=20,
+            unit_cost="25.00",
             expiry_date=timezone.now().date(),
             is_active=True,
         )
@@ -74,7 +80,10 @@ class SaleModelTests(TestCase):
         """
         self.sale.subtotal_amount = "999.00"
         self.sale.total_amount = "999.00"
-        self.sale.save()
+
+        # Immutability enforcement should raise
+        with self.assertRaises(ValueError):
+            self.sale.save()
 
         refreshed = Sale.objects.get(id=self.sale.id)
 
@@ -120,9 +129,14 @@ class SaleModelTests(TestCase):
         Terminal state rule:
         REFUNDED sales cannot transition further.
         """
+        # Move to refunded state via validation path
         self.sale.status = Sale.STATUS_REFUNDED
-        self.sale.save()
 
+        # This save should raise immutability protection
+        with self.assertRaises(ValueError):
+            self.sale.save()
+
+        # Lifecycle validation should still block transitions
         with self.assertRaises(InvalidSaleTransitionError):
             validate_transition(
                 sale=self.sale,

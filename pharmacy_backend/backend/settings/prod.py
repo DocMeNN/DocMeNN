@@ -1,5 +1,6 @@
-# backend/settings/prod.py
 """
+PATH: backend/settings/prod.py
+
 PRODUCTION SETTINGS (Render)
 
 Hardening goals (FINISHING MOVE):
@@ -79,7 +80,7 @@ SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 
 SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_HTTPONLY = True  # Safe if you are NOT reading CSRF cookie in JS (recommended for JWT APIs)
+CSRF_COOKIE_HTTPONLY = True
 
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
@@ -103,7 +104,6 @@ if not CORS_ALLOWED_ORIGINS:
 if not CSRF_TRUSTED_ORIGINS:
     raise ImproperlyConfigured("CSRF_TRUSTED_ORIGINS must be set in production.")
 
-# No localhost/http in production
 if any("localhost" in o or "127.0.0.1" in o for o in CORS_ALLOWED_ORIGINS):
     raise ImproperlyConfigured("Remove localhost from CORS_ALLOWED_ORIGINS in production.")
 if any("localhost" in o or "127.0.0.1" in o for o in CSRF_TRUSTED_ORIGINS):
@@ -113,6 +113,4 @@ if any(o.startswith("http://") for o in CORS_ALLOWED_ORIGINS):
 if any(o.startswith("http://") for o in CSRF_TRUSTED_ORIGINS):
     raise ImproperlyConfigured("CSRF_TRUSTED_ORIGINS must be https:// in production.")
 
-# With JWT Authorization headers, you typically do NOT need credentialed CORS.
-# This reduces cookie risk across origins.
 CORS_ALLOW_CREDENTIALS = False

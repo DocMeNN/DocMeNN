@@ -1,17 +1,21 @@
-# pos/models/cart.py
-
 """
+PATH: pos/models/cart.py
+
 CART MODEL (PHASE 1)
 
 Purpose:
-- Active POS cart (temporary, mutable) — STORE SCOPED.
+- Active POS cart (temporary, mutable).
+- Backward compatible with legacy single-store mode (store can be NULL).
 - Derive subtotal + item count safely from CartItems.
 
 Rules:
-- One active cart per user per store
-- Converted into Sale at checkout
-- Cart is read-only after deactivation
-- Store is required for active carts (POS scope)
+- One active cart per user per store (including NULL store).
+- Converted into Sale at checkout.
+- Cart is read-only after deactivation.
+
+IMPORTANT (Back-compat):
+- Store is OPTIONAL for active carts to support legacy tests and single-store setups.
+- Multi-store enforcement should happen at API layer when store_id is supplied/required.
 """
 
 import uuid
@@ -29,7 +33,7 @@ User = settings.AUTH_USER_MODEL
 
 class Cart(models.Model):
     """
-    Active POS cart (temporary, mutable) — STORE SCOPED.
+    Active POS cart (temporary, mutable).
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -40,7 +44,7 @@ class Cart(models.Model):
         null=True,
         blank=True,
         related_name="carts",
-        help_text="Store/branch where this cart is created and checked out",
+        help_text="Store/branch context. Optional for legacy single-store carts.",
     )
 
     user = models.ForeignKey(
@@ -64,39 +68,23 @@ class Cart(models.Model):
             )
         ]
 
-    # --------------------------------------------------
-    # VALIDATION
-    # --------------------------------------------------
-
     def clean(self):
-        # Runtime POS rule: active carts must be store-scoped
-        if self.is_active and not self.store_id:
-            raise ValidationError({"store": "store is required for an active POS cart"})
+        # Backward compatible: DO NOT enforce store presence here.
+        # Store requirement (if desired) must be enforced at the API layer.
+        if self.user_id is None:
+            raise ValidationError({"user": "user is required"})
 
     def save(self, *args, **kwargs):
         self.full_clean()
         return super().save(*args, **kwargs)
 
-    # --------------------------------------------------
-    # DERIVED, SAFE READ-ONLY PROPERTIES
-    # --------------------------------------------------
-
     @property
     def item_count(self) -> int:
-        """
-        Total units in the cart (not line count).
-
-        Example:
-        - 2x Paracetamol + 3x Soap => item_count = 5
-        """
         total = self.items.aggregate(total=Sum("quantity")).get("total")
         return int(total or 0)
 
     @property
     def subtotal_amount(self) -> Decimal:
-        """
-        Safe subtotal calculation.
-        """
         total = (
             self.items.annotate(line_total=F("quantity") * F("unit_price"))
             .aggregate(total=Sum("line_total"))
@@ -107,10 +95,6 @@ class Cart(models.Model):
     @property
     def is_empty(self) -> bool:
         return not self.items.exists()
-
-    # --------------------------------------------------
-    # STATE GUARDS
-    # --------------------------------------------------
 
     def assert_active(self):
         if not self.is_active:

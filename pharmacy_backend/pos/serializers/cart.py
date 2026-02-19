@@ -1,12 +1,16 @@
-# pos/serializers/cart.py
-
 """
+PATH: pos/serializers/cart.py
+
 CART SERIALIZER (PHASE 1)
 
 Purpose:
 - Return a POS cart in a frontend-friendly shape.
 - Keep money + totals server-derived (single source of truth).
-- Include store context for multi-store POS operations.
+- Backward compatible fields for older tests/clients.
+
+Compatibility:
+- Tests reference `total_amount` for cart responses.
+  In POS, cart total is the cart subtotal (no tax/discount at cart level).
 """
 
 from decimal import Decimal
@@ -18,22 +22,16 @@ from .cart_item import CartItemSerializer
 
 
 class CartSerializer(serializers.ModelSerializer):
-    """
-    Serializer for POS cart.
-
-    Guarantees:
-    - items are read-only
-    - totals are computed server-side (never trusted from client)
-    - store context is included
-    """
-
-    store_id = serializers.UUIDField(source="store.id", read_only=True)
-    store_name = serializers.CharField(source="store.name", read_only=True)
+    store_id = serializers.UUIDField(source="store.id", read_only=True, allow_null=True)
+    store_name = serializers.CharField(source="store.name", read_only=True, default="")
 
     items = CartItemSerializer(many=True, read_only=True)
 
     item_count = serializers.SerializerMethodField(read_only=True)
     subtotal_amount = serializers.SerializerMethodField(read_only=True)
+
+    # Backward-compat alias expected by tests
+    total_amount = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Cart
@@ -46,13 +44,13 @@ class CartSerializer(serializers.ModelSerializer):
             "items",
             "item_count",
             "subtotal_amount",
+            "total_amount",
             "created_at",
             "updated_at",
         ]
         read_only_fields = fields
 
     def get_item_count(self, obj) -> int:
-        # Count total units across lines (better for POS than "number of lines")
         items = getattr(obj, "items", None)
         if not items:
             return 0
@@ -73,5 +71,8 @@ class CartSerializer(serializers.ModelSerializer):
         except Exception:
             subtotal = Decimal("0.00")
 
-        # Return as string to avoid float serialization issues
         return f"{subtotal:.2f}"
+
+    def get_total_amount(self, obj) -> str:
+        # For carts: total == subtotal (no tax/discount at cart level in this module)
+        return self.get_subtotal_amount(obj)

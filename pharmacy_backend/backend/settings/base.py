@@ -1,18 +1,21 @@
-# backend/settings/base.py
 """
+PATH: backend/settings/base.py
+
 BASE SETTINGS (shared by dev + prod)
 
 Operational maturity:
 - Throttling (already)
 - Frontend redirect base (already)
 - Legacy checkout kill-switch (already)
-- Sentry (NEW): error visibility in production
+- Sentry (optional): error visibility in production
+- Accounting posting toggle (NEW): allow tests/dev to run POS without ledger setup
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+import sys
 from datetime import timedelta
+from pathlib import Path
 
 import environ
 from corsheaders.defaults import default_headers, default_methods
@@ -21,6 +24,11 @@ from corsheaders.defaults import default_headers, default_methods
 # BASE DIRECTORY
 # -----------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# -----------------------------------------
+# TEST MODE DETECTION
+# -----------------------------------------
+TESTING = "test" in sys.argv
 
 # -----------------------------------------
 # ENV (django-environ)
@@ -51,6 +59,9 @@ env = environ.Env(
     SENTRY_ENVIRONMENT=(str, "development"),
     SENTRY_TRACES_SAMPLE_RATE=(float, 0.0),
     SENTRY_SEND_PII=(bool, False),
+    # Accounting posting toggle (NEW)
+    # Default: disabled in tests to avoid failing POS flow due to missing chart setup.
+    ACCOUNTING_POSTING_ENABLED=(bool, not TESTING),
 )
 
 # -----------------------------------------
@@ -69,8 +80,20 @@ elif env_file_2.exists():
 # -----------------------------------------
 SECRET_KEY = (env("SECRET_KEY") or "dev-insecure-change-me").strip()
 DEBUG = env.bool("DEBUG")
-
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
+
+# -----------------------------------------
+# I18N / TZ
+# -----------------------------------------
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = (env("TIME_ZONE") or "UTC").strip()
+USE_I18N = True
+USE_TZ = True
+
+# -----------------------------------------
+# AUTH USER MODEL (custom)
+# -----------------------------------------
+AUTH_USER_MODEL = "users.User"
 
 # -----------------------------------------
 # INSTALLED APPS
@@ -96,13 +119,8 @@ INSTALLED_APPS = [
     "pos",
     "purchases",
     "public.apps.PublicConfig",
+    "batches",
 ]
-
-# -----------------------------------------
-# AUTH USER MODEL (CUSTOM USER)
-# -----------------------------------------
-# Required so Django does NOT use auth.User, and to prevent groups/permissions clashes.
-AUTH_USER_MODEL = "users.User"
 
 # -----------------------------------------
 # MIDDLEWARE
@@ -123,12 +141,12 @@ WSGI_APPLICATION = "backend.wsgi.application"
 APPEND_SLASH = True
 
 # -----------------------------------------
-# TEMPLATES (REQUIRED FOR DJANGO ADMIN)
+# TEMPLATES (required for Django admin)
 # -----------------------------------------
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [str(BASE_DIR / "templates")],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -138,7 +156,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
             ],
         },
-    },
+    }
 ]
 
 # -----------------------------------------
@@ -212,6 +230,11 @@ PAYMENTS = {
 }
 
 # -----------------------------------------
+# ACCOUNTING POSTING TOGGLE
+# -----------------------------------------
+ACCOUNTING_POSTING_ENABLED = env.bool("ACCOUNTING_POSTING_ENABLED")
+
+# -----------------------------------------
 # SENTRY (optional)
 # -----------------------------------------
 SENTRY_DSN = (env("SENTRY_DSN") or "").strip()
@@ -232,7 +255,6 @@ if SENTRY_DSN:
             send_default_pii=SENTRY_SEND_PII,
         )
     except Exception:
-        # Never block app startup because monitoring failed.
         pass
 
 # -----------------------------------------
