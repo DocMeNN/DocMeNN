@@ -4,12 +4,17 @@ PATH: manage.py
 
 Django management entrypoint.
 
-Critical rule:
-- If DJANGO_SETTINGS_MODULE is NOT set, we default to backend.settings.dev.
-  This ensures INSTALLED_APPS (including `store`) is defined for CI/test runs.
+Key safeguard:
+- If DJANGO_SETTINGS_MODULE is unset OR incorrectly set to the settings *package*
+  ("backend.settings"), we force it to a concrete module ("backend.settings.dev").
 
-Production safety:
-- Render/production must set DJANGO_SETTINGS_MODULE=backend.settings.prod explicitly.
+Why:
+- "backend.settings" is a package; your __init__.py intentionally loads nothing.
+  That leads to missing INSTALLED_APPS in CI/test runs, breaking model imports.
+
+Production:
+- Production must set DJANGO_SETTINGS_MODULE=backend.settings.prod explicitly.
+  We respect that.
 """
 
 from __future__ import annotations
@@ -18,8 +23,16 @@ import os
 import sys
 
 
+def _ensure_settings_module() -> None:
+    current = (os.environ.get("DJANGO_SETTINGS_MODULE") or "").strip()
+
+    # If CI (or anyone) points to the package, Django won't load INSTALLED_APPS.
+    if not current or current == "backend.settings":
+        os.environ["DJANGO_SETTINGS_MODULE"] = "backend.settings.dev"
+
+
 def main() -> None:
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "backend.settings.dev")
+    _ensure_settings_module()
 
     try:
         from django.core.management import execute_from_command_line
