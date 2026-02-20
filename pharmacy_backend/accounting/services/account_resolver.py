@@ -28,17 +28,25 @@ PHASE 5 UPGRADE (Tenant Safety Helpers):
     - user_can_access_business(user, business_id)
   These helpers do NOT assume your schema, but will enforce scoping if ChartOfAccounts
   exposes a business relation (e.g., business_id / business FK).
+
+ADR-001 (Bootstrap CoA):
+- If no active chart exists, automatically bootstrap ONE safely (idempotent).
+- If multiple active charts exist, hard-fail (do NOT auto-fix silently).
 """
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 
 from django.core.exceptions import MultipleObjectsReturned, ObjectDoesNotExist
+from django.db import transaction
 
 from accounting.models.account import Account
 from accounting.models.chart import ChartOfAccounts
 from accounting.services.exceptions import AccountResolutionError
+
+logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------
 # SEMANTIC CODES BY CHART KEY
@@ -94,6 +102,9 @@ DEFAULT_CODES = {
     "SALES_DISCOUNT": "4050",
     "COGS": "5000",
 }
+
+# ADR-001: default name used when we must create a brand-new chart
+DEFAULT_BOOTSTRAP_CHART_NAME = "Pharmacy Standard Chart"
 
 
 def _norm(s: str) -> str:
@@ -151,7 +162,65 @@ def _has_chart_field(field_name: str) -> bool:
 
 
 # ------------------------------------------------------------
-# ACTIVE CHART (BACKWARD COMPAT)
+# ADR-001: BOOTSTRAP HELPERS
+# ------------------------------------------------------------
+
+
+def _ensure_single_active_chart() -> ChartOfAccounts:
+    """
+    ADR-001 enforcement:
+    - If exactly one active chart exists -> return it
+    - If none active -> activate an existing chart if present, else create one
+    - If multiple active -> hard-fail (do NOT auto-fix silently)
+
+    This runs inside a DB transaction to be concurrency-safe.
+    """
+    with transaction.atomic():
+        # lock the active set for concurrency safety
+        active_qs = ChartOfAccounts.objects.select_for_update().filter(is_active=True)
+        active_count = active_qs.count()
+
+        if active_count == 1:
+            return active_qs.first()
+
+        if active_count > 1:
+            raise AccountResolutionError(
+                "Multiple active Charts of Accounts found. Only one active chart is allowed."
+            )
+
+        # active_count == 0: bootstrap path
+        # Prefer activating an existing chart to avoid failing on required fields.
+        existing = ChartOfAccounts.objects.select_for_update().order_by("id").first()
+        if existing:
+            # Ensure no other charts are active (should already be true, but keep it explicit)
+            ChartOfAccounts.objects.select_for_update().filter(is_active=True).update(
+                is_active=False
+            )
+            existing.is_active = True
+            existing.save(update_fields=["is_active"])
+
+            logger.warning(
+                "ADR-001 bootstrap: Activated existing ChartOfAccounts id=%s name=%s",
+                getattr(existing, "id", None),
+                getattr(existing, "name", None),
+            )
+            return existing
+
+        # No charts exist at all: create a default one
+        chart = ChartOfAccounts.objects.create(
+            name=DEFAULT_BOOTSTRAP_CHART_NAME,
+            is_active=True,
+        )
+        logger.warning(
+            "ADR-001 bootstrap: Created default ChartOfAccounts id=%s name=%s",
+            getattr(chart, "id", None),
+            getattr(chart, "name", None),
+        )
+        return chart
+
+
+# ------------------------------------------------------------
+# ACTIVE CHART (ADR-001 UPGRADED)
 # ------------------------------------------------------------
 
 
@@ -160,15 +229,20 @@ def get_active_chart() -> ChartOfAccounts:
     """
     Cached resolver for the *single* active chart.
 
+    ADR-001 behavior:
+    - If exactly one active -> return it
+    - If none active -> bootstrap automatically (idempotent)
+    - If multiple active -> hard-fail
+
     NOTE:
     If you toggle active charts in admin or tests, call clear_active_chart_cache().
     """
     try:
         return ChartOfAccounts.objects.get(is_active=True)
-    except ObjectDoesNotExist as exc:
-        raise AccountResolutionError(
-            "No active Chart of Accounts found. Ensure exactly one chart has is_active=True."
-        ) from exc
+    except ObjectDoesNotExist:
+        chart = _ensure_single_active_chart()
+        clear_active_chart_cache()
+        return chart
     except MultipleObjectsReturned as exc:
         raise AccountResolutionError(
             "Multiple active Charts of Accounts found. Only one active chart is allowed."
@@ -225,9 +299,7 @@ def get_chart_for_business(business_id: int) -> ChartOfAccounts:
 
     chart = qs.first()
     if not chart:
-        raise AccountResolutionError(
-            f"No ChartOfAccounts found for business_id={business_id}"
-        )
+        raise AccountResolutionError(f"No ChartOfAccounts found for business_id={business_id}")
     return chart
 
 
