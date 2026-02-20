@@ -1,8 +1,3 @@
-// src/features/pos/CartPanel.jsx
-
-import CartItem from "./CartItem";
-import { formatMoney } from "../../utils/money";
-
 /**
  * ======================================================
  * PATH: src/features/pos/CartPanel.jsx
@@ -16,6 +11,10 @@ import { formatMoney } from "../../utils/money";
  * - No business logic (backend + store remain authoritative)
  * ======================================================
  */
+
+import CartItem from "./CartItem";
+import { formatMoney } from "../../utils/money";
+
 export default function CartPanel({
   cart,
   onIncrement,

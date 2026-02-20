@@ -1,6 +1,18 @@
-// src/api/auth.api.js
+/**
+ * ======================================================
+ * PATH: src/api/auth.api.js
+ * ======================================================
+ *
+ * AUTH API
+ * - POST /auth/jwt/create/  -> { access, refresh }
+ * - GET  /auth/me/          -> user profile (requires Authorization)
+ *
+ * Tokens are persisted via lib/auth.js (single standard keys)
+ * ======================================================
+ */
 
 import axiosClient from "./axiosClient";
+import { saveTokens, clearTokens } from "../lib/auth";
 
 /**
  * Login user
@@ -20,10 +32,10 @@ export const login = async ({ email, password }) => {
     throw new Error("Token creation failed");
   }
 
-  localStorage.setItem("access_token", access);
-  localStorage.setItem("refresh_token", refresh);
+  // Single standard keys used everywhere
+  saveTokens(access, refresh);
 
-  // /auth/me/ requires Authorization header; interceptor attaches it
+  // /auth/me/ requires Authorization header; axiosClient interceptor should attach it
   const meRes = await axiosClient.get("/auth/me/");
   return meRes.data;
 };
@@ -33,6 +45,5 @@ export const getMe = async () => {
 };
 
 export const logout = () => {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
+  clearTokens();
 };

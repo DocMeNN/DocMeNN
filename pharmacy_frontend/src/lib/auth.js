@@ -1,56 +1,49 @@
-// src/lib/auth.js
+/**
+ * ======================================================
+ * PATH: src/api/auth.api.js
+ * ======================================================
+ *
+ * AUTH API
+ * - POST /auth/jwt/create/  -> { access, refresh }
+ * - GET  /auth/me/          -> user profile (requires Authorization)
+ *
+ * Tokens are persisted via lib/auth.js (single standard keys)
+ * ======================================================
+ */
 
-// Where we store JWT tokens
-const ACCESS_KEY = "accessToken";
-const REFRESH_KEY = "refreshToken";
+import axiosClient from "./axiosClient";
+import { saveTokens, clearTokens } from "../lib/auth";
 
-// Save tokens to localStorage
-export function saveTokens(access, refresh) {
-  localStorage.setItem(ACCESS_KEY, access);
-  localStorage.setItem(REFRESH_KEY, refresh);
-}
+/**
+ * Login user
+ * - Gets JWT tokens
+ * - Fetches user profile
+ * - Returns user
+ */
+export const login = async ({ email, password }) => {
+  const tokenRes = await axiosClient.post("/auth/jwt/create/", {
+    email,
+    password,
+  });
 
-// Get Access Token
-export function getAccessToken() {
-  return localStorage.getItem(ACCESS_KEY);
-}
+  const { access, refresh } = tokenRes.data || {};
 
-// Get Refresh Token
-export function getRefreshToken() {
-  return localStorage.getItem(REFRESH_KEY);
-}
-
-// Remove tokens (logout)
-export function clearTokens() {
-  localStorage.removeItem(ACCESS_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-}
-
-// Decode JWT to get payload (role, email, id)
-export function decodeJWT(token) {
-  try {
-    const payload = token.split(".")[1];
-    return JSON.parse(atob(payload));
-  } catch (e) {
-    return null;
+  if (!access || !refresh) {
+    throw new Error("Token creation failed");
   }
-}
 
-// Get user information from token
-export function getUserFromToken() {
-  const access = getAccessToken();
-  if (!access) return null;
+  // Single standard keys used everywhere
+  saveTokens(access, refresh);
 
-  return decodeJWT(access);
-}
+  // /auth/me/ requires Authorization header; axiosClient interceptor should attach it
+  const meRes = await axiosClient.get("/auth/me/");
+  return meRes.data;
+};
 
-// Check if user is authenticated
-export function isLoggedIn() {
-  return !!getAccessToken();
-}
+export const getMe = async () => {
+  return axiosClient.get("/auth/me/");
+};
 
-// Check if user has a role (Admin, Cashier, Pharmacist, Reception)
-export function hasRole(role) {
-  const user = getUserFromToken();
-  return user?.role === role;
-}
+export const logout = () => {
+  clearTokens();
+};

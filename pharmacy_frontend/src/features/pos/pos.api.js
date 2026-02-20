@@ -1,4 +1,3 @@
-// src/features/pos/pos.api.js
 /**
  * ======================================================
  * PATH: src/features/pos/pos.api.js
@@ -28,6 +27,7 @@
  * - POST /public/order/initiate/
  * - GET  /public/order/<order_id>/
  * - POST /public/payments/paystack/webhook/
+ * ======================================================
  */
 
 import axiosClient from "../../api/axiosClient";
@@ -59,7 +59,11 @@ function extractErrorMessage(err, fallback = "Request failed.") {
     }
   }
 
-  if (!data) return status ? `[${status}] ${err?.message || fallback}` : err?.message || fallback;
+  if (!data)
+    return status
+      ? `[${status}] ${err?.message || fallback}`
+      : err?.message || fallback;
+
   if (typeof data === "string") return status ? `[${status}] ${data}` : data;
 
   return status ? `[${status}] ${fallback}` : fallback;
@@ -88,9 +92,16 @@ function normalizeListToResults(data) {
   const list = normalizeList(data);
   if (!list) throw new Error("Invalid list response shape");
 
-  const count = Number.isFinite(Number(data?.count)) ? Number(data.count) : list.length;
+  const count = Number.isFinite(Number(data?.count))
+    ? Number(data.count)
+    : list.length;
 
-  return { count, results: list, next: data?.next ?? null, previous: data?.previous ?? null };
+  return {
+    count,
+    results: list,
+    next: data?.next ?? null,
+    previous: data?.previous ?? null,
+  };
 }
 
 function normalizeProductsPayload(payload) {
@@ -117,6 +128,23 @@ function normalizeCart(cart) {
   const item_count = safe.item_count ?? items.length;
 
   return { ...safe, items, subtotal_amount, total_amount, item_count };
+}
+
+function normalizeAllocations(allocs) {
+  if (!Array.isArray(allocs)) return null;
+
+  const cleaned = allocs
+    .map((a) => {
+      const method = String(a?.method || a?.payment_method || "").trim();
+      const amount = Number(a?.amount);
+      return {
+        method,
+        amount: Number.isFinite(amount) ? amount : NaN,
+      };
+    })
+    .filter((a) => a.method && Number.isFinite(a.amount) && a.amount > 0);
+
+  return cleaned.length ? cleaned : null;
 }
 
 // ======================================================
@@ -200,7 +228,8 @@ export async function fetchProducts({ storeId } = {}) {
 export async function fetchPublicProducts({ storeId, q = "" } = {}) {
   try {
     const resolvedStoreId = String(storeId || "").trim();
-    if (!resolvedStoreId) throw new Error("storeId is required for public products.");
+    if (!resolvedStoreId)
+      throw new Error("storeId is required for public products.");
 
     const res = await axiosClient.get("/products/products/public/", {
       params: {
@@ -210,7 +239,8 @@ export async function fetchPublicProducts({ storeId, q = "" } = {}) {
     });
 
     const normalized = normalizeProductsPayload(res.data);
-    if (!normalized) throw new Error("Public API: Invalid products response shape");
+    if (!normalized)
+      throw new Error("Public API: Invalid products response shape");
 
     return normalized;
   } catch (err) {
@@ -236,7 +266,9 @@ export async function createProduct(payload = {}, { storeId } = {}) {
     if (sid && !body.store) body.store = sid;
 
     if (!body.store) {
-      throw new Error("No active store selected. Set active_store_id before creating products.");
+      throw new Error(
+        "No active store selected. Set active_store_id before creating products."
+      );
     }
 
     const res = await axiosClient.post("/products/products/", body);
@@ -267,10 +299,12 @@ export async function intakeStockBatch({
     if (!pid) throw new Error("productId is required.");
 
     const qty = Number(quantity_received);
-    if (!Number.isFinite(qty) || qty <= 0) throw new Error("quantity_received must be > 0");
+    if (!Number.isFinite(qty) || qty <= 0)
+      throw new Error("quantity_received must be > 0");
 
     const cost = Number(unit_cost);
-    if (!Number.isFinite(cost) || cost <= 0) throw new Error("unit_cost must be > 0");
+    if (!Number.isFinite(cost) || cost <= 0)
+      throw new Error("unit_cost must be > 0");
 
     const exp = String(expiry_date || "").trim();
     if (!exp) throw new Error("expiry_date is required (YYYY-MM-DD).");
@@ -370,7 +404,8 @@ export async function fetchPublicOrderStatus(orderId) {
 export async function fetchCart({ storeId } = {}) {
   try {
     const resolvedStoreId = resolveStoreId(storeId);
-    if (!resolvedStoreId) throw new Error("store_id is required for POS cart operations.");
+    if (!resolvedStoreId)
+      throw new Error("store_id is required for POS cart operations.");
 
     const res = await axiosClient.get("/pos/cart/", {
       params: { store_id: resolvedStoreId },
@@ -412,7 +447,8 @@ export async function addItemToCart({ storeId, productId, quantity = 1 }) {
     if (!productId) throw new Error("productId is required.");
 
     const qty = Number(quantity);
-    if (!Number.isFinite(qty) || qty <= 0) throw new Error("quantity must be a positive number");
+    if (!Number.isFinite(qty) || qty <= 0)
+      throw new Error("quantity must be a positive number");
 
     const res = await axiosClient.post("/pos/cart/items/add/", {
       store_id: resolvedStoreId,
@@ -437,7 +473,8 @@ export async function updateCartItemQuantity({ storeId, itemId, quantity }) {
     if (!itemId) throw new Error("itemId is required.");
 
     const qty = Number(quantity);
-    if (!Number.isFinite(qty) || qty < 1) throw new Error("quantity must be >= 1");
+    if (!Number.isFinite(qty) || qty < 1)
+      throw new Error("quantity must be >= 1");
 
     const res = await axiosClient.patch(`/pos/cart/items/${itemId}/update/`, {
       store_id: resolvedStoreId,
@@ -478,20 +515,27 @@ export async function removeItemFromCart({ storeId, itemId }) {
 // CHECKOUT (STAFF POS)
 // ======================================================
 
-export async function checkoutCart({ storeId, payment_method = "cash", payment_allocations } = {}) {
+export async function checkoutCart({
+  storeId,
+  payment_method = "cash",
+  payment_allocations,
+} = {}) {
   try {
     const resolvedStoreId = resolveStoreId(storeId);
     if (!resolvedStoreId) throw new Error("store_id is required for checkout.");
 
-    const hasAllocations = Array.isArray(payment_allocations) && payment_allocations.length > 0;
+    const allocations = normalizeAllocations(payment_allocations);
+    const hasAllocations = Boolean(allocations);
 
     const payload = {
       store_id: resolvedStoreId,
       payment_method: hasAllocations ? "split" : payment_method,
+      ...(hasAllocations ? { payment_allocations: allocations } : {}),
     };
 
-    if (hasAllocations) {
-      payload.payment_allocations = payment_allocations;
+    // If caller explicitly set split, require allocations
+    if (String(payment_method || "").toLowerCase() === "split" && !hasAllocations) {
+      throw new Error("payment_allocations are required for split payment.");
     }
 
     const res = await axiosClient.post("/pos/checkout/", payload);

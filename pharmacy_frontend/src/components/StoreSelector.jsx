@@ -1,5 +1,3 @@
-// src/components/StoreSelector.jsx
-
 /**
  * ======================================================
  * PATH: src/components/StoreSelector.jsx
@@ -21,10 +19,11 @@
  * Notes:
  * - Uses POS API contract (single source of network truth)
  * - Syncs across tabs via storage event
+ * - Avoids re-fetch loops if parent passes inline onChange
  * ======================================================
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchStaffStores } from "../features/pos/pos.api";
 
 function resolveInitialStoreId() {
@@ -54,11 +53,27 @@ export default function StoreSelector({ onChange }) {
 
   const [activeStoreId, setActiveStoreId] = useState(resolveInitialStoreId);
 
-  const activeStore = useMemo(
-    () => stores.find((s) => String(s.id) === String(activeStoreId)) || null,
-    [stores, activeStoreId]
-  );
+  // Keep latest onChange without re-triggering effects
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
+  // Prevent duplicate broadcasts
+  const lastBroadcastRef = useRef(null);
+
+  const safeBroadcast = (sid) => {
+    const next = String(sid || "").trim();
+    if (lastBroadcastRef.current === next) return;
+    lastBroadcastRef.current = next;
+    broadcastActiveStore(next);
+  };
+
+  const activeStore = useMemo(() => {
+    return stores.find((s) => String(s.id) === String(activeStoreId)) || null;
+  }, [stores, activeStoreId]);
+
+  // Load stores once on mount
   useEffect(() => {
     let mounted = true;
 
@@ -76,17 +91,26 @@ export default function StoreSelector({ onChange }) {
 
         setStores(active);
 
-        // If saved storeId no longer exists, clear it (and broadcast)
         const saved = String(localStorage.getItem("active_store_id") || "").trim();
+
+        // If saved storeId no longer exists, clear it (and broadcast)
         if (saved && !active.some((s) => String(s.id) === saved)) {
           localStorage.removeItem("active_store_id");
+          localStorage.removeItem("store_id");
+
           setActiveStoreId("");
-          broadcastActiveStore("");
-          if (onChange) onChange("", null);
-        } else {
-          // Ensure we broadcast the current store on initial load (helps pages mount cleanly)
-          const initial = resolveInitialStoreId();
-          if (initial) broadcastActiveStore(initial);
+          safeBroadcast("");
+
+          if (onChangeRef.current) onChangeRef.current("", null);
+          return;
+        }
+
+        // Broadcast initial store ONCE (helps pages mount cleanly)
+        const initial = resolveInitialStoreId();
+        if (initial) {
+          // keep state aligned if state is empty or stale
+          setActiveStoreId((prev) => (String(prev || "").trim() ? prev : initial));
+          safeBroadcast(initial);
         }
       } catch (e) {
         if (!mounted) return;
@@ -101,16 +125,18 @@ export default function StoreSelector({ onChange }) {
     return () => {
       mounted = false;
     };
-  }, [onChange]);
+  }, []);
 
   // ✅ Sync when another tab changes the active store
   useEffect(() => {
     function onStorage(ev) {
       if (ev.key !== "active_store_id") return;
-      const next = String(ev.newValue || "");
+
+      const next = String(ev.newValue || "").trim();
       setActiveStoreId(next);
-      broadcastActiveStore(next);
+      safeBroadcast(next);
     }
+
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
@@ -123,7 +149,7 @@ export default function StoreSelector({ onChange }) {
     if (storeId) localStorage.setItem("active_store_id", storeId);
     else localStorage.removeItem("active_store_id");
 
-    // legacy cleanup: if you previously used store_id, keep it aligned (optional)
+    // legacy alignment (optional)
     if (storeId) localStorage.setItem("store_id", storeId);
     else localStorage.removeItem("store_id");
 
@@ -132,9 +158,9 @@ export default function StoreSelector({ onChange }) {
         ? stores.find((s) => String(s.id) === String(storeId)) || null
         : null;
 
-    broadcastActiveStore(storeId);
+    safeBroadcast(storeId);
 
-    if (onChange) onChange(storeId, storeObj);
+    if (onChangeRef.current) onChangeRef.current(storeId, storeObj);
   };
 
   if (loading) {

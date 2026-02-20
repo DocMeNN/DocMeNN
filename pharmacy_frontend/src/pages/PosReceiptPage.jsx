@@ -1,5 +1,3 @@
-// src/pages/PosReceiptPage.jsx
-
 /**
  * ======================================================
  * PATH: src/pages/PosReceiptPage.jsx
@@ -43,8 +41,12 @@ function extractErrMessage(err, fallback = "Failed to fetch staff receipt.") {
     if (keys.length) {
       const k = keys[0];
       const v = data[k];
-      if (Array.isArray(v) && v[0]) return status ? `[${status}] ${k}: ${v[0]}` : `${k}: ${v[0]}`;
-      if (typeof v === "string" && v.trim()) return status ? `[${status}] ${k}: ${v}` : `${k}: ${v}`;
+      if (Array.isArray(v) && v[0]) {
+        return status ? `[${status}] ${k}: ${v[0]}` : `${k}: ${v[0]}`;
+      }
+      if (typeof v === "string" && v.trim()) {
+        return status ? `[${status}] ${k}: ${v}` : `${k}: ${v}`;
+      }
     }
   }
 
@@ -62,10 +64,7 @@ async function fetchStaffReceiptCanonical({ saleId, storeId }) {
   if (!saleId) throw new Error("saleId is required.");
 
   // ✅ Canonical first, then legacy alias (kept for older clients)
-  const candidates = [
-    `/sales/sales/${saleId}/receipt/`,
-    `/sales/${saleId}/receipt/`,
-  ];
+  const candidates = [`/sales/sales/${saleId}/receipt/`, `/sales/${saleId}/receipt/`];
 
   let lastErr = null;
 
@@ -141,7 +140,9 @@ export default function PosReceiptPage() {
   const subtotal = toNumber(sale?.subtotal_amount ?? sale?.subtotal ?? 0);
   const tax = toNumber(sale?.tax_amount ?? sale?.tax ?? 0);
   const discount = toNumber(sale?.discount_amount ?? sale?.discount ?? 0);
-  const total = toNumber(sale?.total_amount ?? sale?.total ?? subtotal + tax - discount);
+  const total = toNumber(
+    sale?.total_amount ?? sale?.total ?? subtotal + tax - discount
+  );
 
   const invoiceNo = sale?.invoice_no || sale?.invoice || sale?.reference || "—";
   const status = sale?.status || "—";
@@ -149,7 +150,10 @@ export default function PosReceiptPage() {
 
   const paidLegsSum = useMemo(() => {
     if (!allocations.length) return null;
-    return allocations.reduce((acc, a) => acc + toNumber(a?.amount ?? a?.amount_paid ?? 0), 0);
+    return allocations.reduce(
+      (acc, a) => acc + toNumber(a?.amount ?? a?.amount_paid ?? 0),
+      0
+    );
   }, [allocations]);
 
   if (loading) return <div className="p-6 text-gray-600">Loading receipt…</div>;
@@ -172,7 +176,10 @@ export default function PosReceiptPage() {
               Back to POS
             </button>
 
-            <Link to="/sales" className="px-4 py-2 rounded-md border hover:bg-gray-50">
+            <Link
+              to="/sales"
+              className="px-4 py-2 rounded-md border hover:bg-gray-50"
+            >
               Sales History
             </Link>
           </div>
@@ -265,7 +272,8 @@ export default function PosReceiptPage() {
 
         {allocations.length === 0 ? (
           <div className="p-6 text-sm text-gray-600">
-            Method: <span className="font-mono text-gray-800">{paymentMethod}</span>
+            Method:{" "}
+            <span className="font-mono text-gray-800">{paymentMethod}</span>
           </div>
         ) : (
           <div className="p-4 space-y-3">
@@ -291,16 +299,23 @@ export default function PosReceiptPage() {
 
                 <div className="text-right">
                   <div className="text-sm text-gray-600">Amount</div>
-                  <div className="font-semibold">{formatMoney(toNumber(a.amount || 0))}</div>
+                  <div className="font-semibold">
+                    {formatMoney(toNumber(a.amount || 0))}
+                  </div>
                 </div>
               </div>
             ))}
 
             <div className="text-xs text-gray-500 pt-2">
               Allocations sum:{" "}
-              <span className="font-mono text-gray-800">{formatMoney(paidLegsSum ?? 0)}</span>
-              {paidLegsSum != null && Math.round(paidLegsSum * 100) !== Math.round(total * 100) ? (
-                <span className="ml-2 text-amber-700">• Warning: allocations do not equal total</span>
+              <span className="font-mono text-gray-800">
+                {formatMoney(paidLegsSum ?? 0)}
+              </span>
+              {paidLegsSum != null &&
+              Math.round(paidLegsSum * 100) !== Math.round(total * 100) ? (
+                <span className="ml-2 text-amber-700">
+                  • Warning: allocations do not equal total
+                </span>
               ) : null}
             </div>
           </div>
@@ -314,14 +329,18 @@ export default function PosReceiptPage() {
         </div>
 
         {items.length === 0 ? (
-          <div className="p-6 text-gray-600">Items are not included in this staff receipt response yet.</div>
+          <div className="p-6 text-gray-600">
+            Items are not included in this staff receipt response yet.
+          </div>
         ) : (
           <div className="p-4 space-y-3">
             {items.map((it, idx) => {
               const name = it.product_name || it.name || "Item";
               const qty = toNumber(it.quantity || 0);
               const unit = toNumber(it.unit_price ?? it.unit_price_amount ?? 0);
-              const line = toNumber(it.total_price ?? it.line_total ?? it.total_amount ?? unit * qty);
+              const line = toNumber(
+                it.total_price ?? it.line_total ?? it.total_amount ?? unit * qty
+              );
 
               return (
                 <div
@@ -329,11 +348,14 @@ export default function PosReceiptPage() {
                   className="border rounded-xl p-4 flex items-start justify-between gap-4"
                 >
                   <div className="min-w-0">
-                    <div className="font-semibold text-gray-900 truncate">{name}</div>
+                    <div className="font-semibold text-gray-900 truncate">
+                      {name}
+                    </div>
                     <div className="text-xs text-gray-500 mt-1">
                       Qty: <span className="font-mono">{qty}</span>
                       <span className="mx-2 text-gray-300">•</span>
-                      Unit: <span className="font-mono">{formatMoney(unit)}</span>
+                      Unit:{" "}
+                      <span className="font-mono">{formatMoney(unit)}</span>
                     </div>
                   </div>
 
@@ -349,10 +371,16 @@ export default function PosReceiptPage() {
       </div>
 
       <div className="no-print flex gap-2 flex-wrap">
-        <Link to={`/pos/${storeId}`} className="px-4 py-2 rounded-md border hover:bg-gray-50">
+        <Link
+          to={`/pos/${storeId}`}
+          className="px-4 py-2 rounded-md border hover:bg-gray-50"
+        >
           New sale
         </Link>
-        <Link to="/sales" className="px-4 py-2 rounded-md border hover:bg-gray-50">
+        <Link
+          to="/sales"
+          className="px-4 py-2 rounded-md border hover:bg-gray-50"
+        >
           Sales history
         </Link>
       </div>

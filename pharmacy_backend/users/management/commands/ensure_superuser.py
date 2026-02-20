@@ -1,88 +1,62 @@
-# pharmacy_backend/users/management/commands/ensure_superuser.py
-
+# users/management/commands/ensure_superuser.py
 """
 PATH: users/management/commands/ensure_superuser.py
 
-Production-safe superuser bootstrap.
+Production-safe superuser bootstrap (idempotent).
 
-- Reads AUTO_ADMIN_EMAIL + AUTO_ADMIN_PASSWORD from env.
-- Idempotent: creates superuser if missing; updates password if user exists.
-- Safe for Render free plan (no shell).
-- Logs minimal info; does NOT print the password.
+Env vars:
+- AUTO_ADMIN_EMAIL (required)
+- AUTO_ADMIN_PASSWORD (required)
+- AUTO_ADMIN_USERNAME (optional; defaults to email)
 """
 
 from __future__ import annotations
 
 import os
 
-from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    help = "Create/update an initial superuser from env vars (idempotent)."
+    help = "Create or update a production superuser from env vars (idempotent)."
 
     def handle(self, *args, **options):
-        email = (os.environ.get("AUTO_ADMIN_EMAIL") or "").strip()
-        password = (os.environ.get("AUTO_ADMIN_PASSWORD") or "").strip()
+        email = (os.getenv("AUTO_ADMIN_EMAIL") or "").strip().lower()
+        password = (os.getenv("AUTO_ADMIN_PASSWORD") or "").strip()
+        username = (os.getenv("AUTO_ADMIN_USERNAME") or "").strip() or email
 
         if not email or not password:
-            self.stdout.write(self.style.WARNING("AUTO_ADMIN_* env vars not set. Skipping."))
+            self.stdout.write(self.style.WARNING("ensure_superuser: skipped (missing AUTO_ADMIN_EMAIL/AUTO_ADMIN_PASSWORD)."))
             return
 
         User = get_user_model()
 
-        # Prefer email if the model has it, otherwise fall back to username.
-        email_field_exists = any(f.name == "email" for f in User._meta.fields)
-        username_field = getattr(User, "USERNAME_FIELD", "username")
+        # If your user model uses email as USERNAME_FIELD, username may not exist.
+        # We'll set what we can safely.
+        lookup = {"email": email} if "email" in [f.name for f in User._meta.fields] else {"username": username}
 
-        lookup = {}
-        if email_field_exists:
-            lookup["email"] = email
-        else:
-            lookup[username_field] = email  # fallback
+        user = User.objects.filter(**lookup).first()
 
-        with transaction.atomic():
-            user = User.objects.filter(**lookup).first()
+        created = False
+        if not user:
+            # Create with the safest fields that exist
+            kwargs = {}
+            field_names = {f.name for f in User._meta.fields}
 
-            if user:
-                # Ensure it is staff + superuser and reset password to the env password.
-                user.is_active = True
-                user.is_staff = True
-                user.is_superuser = True
-                user.set_password(password)
+            if "email" in field_names:
+                kwargs["email"] = email
+            if "username" in field_names:
+                kwargs["username"] = username
 
-                # If user has email field but it's blank and our lookup didn't use it, set it
-                if email_field_exists and not getattr(user, "email", ""):
-                    user.email = email
+            user = User(**kwargs)
+            created = True
 
-                user.save()
-                self.stdout.write(self.style.SUCCESS(f"Superuser ensured: {email} (updated)"))
-                return
+        user.is_staff = True
+        user.is_superuser = True
+        user.is_active = True
+        user.set_password(password)
+        user.save()
 
-            # Create new superuser
-            create_kwargs = {}
-            if email_field_exists:
-                create_kwargs["email"] = email
-
-            # Some custom user models require username even if USERNAME_FIELD=email.
-            # If username is required and different from email field, set it.
-            if username_field and username_field != "email":
-                # only set if the field exists
-                if any(f.name == username_field for f in User._meta.fields):
-                    create_kwargs[username_field] = email
-
-            try:
-                user = User.objects.create_superuser(**create_kwargs, password=password)
-            except TypeError:
-                # Some custom create_superuser signatures require positional args.
-                # Fallback: create user manually.
-                user = User(**create_kwargs)
-                user.is_active = True
-                user.is_staff = True
-                user.is_superuser = True
-                user.set_password(password)
-                user.save()
-
-            self.stdout.write(self.style.SUCCESS(f"Superuser ensured: {email} (created)"))
+        msg = "created" if created else "updated"
+        self.stdout.write(self.style.SUCCESS(f"ensure_superuser: {msg} -> {email}"))

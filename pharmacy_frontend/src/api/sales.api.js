@@ -1,81 +1,67 @@
-// src/api/sales.api.js
-
-import axiosClient from "./axiosClient";
-
 /**
- * SALES API CONTRACT
- * ------------------
- * The backend is the single source of truth.
- * This file only sends commands and reads backend state.
- * No totals, no prices, no calculations.
+ * ======================================================
+ * PATH: src/api/sales.api.js
+ * ======================================================
+ *
+ * SALES API (COMPAT WRAPPER)
+ * ------------------------------------------------------
+ * Why this exists:
+ * - Older parts of the UI may import from src/api/sales.api.js
+ * - New canonical Sales API lives in src/features/sales/sales.api.js
+ *
+ * Rule:
+ * - This file must NOT define endpoints independently.
+ * - It delegates to the canonical module to prevent drift.
+ * ======================================================
  */
 
-/**
- * Create a new draft sale
- * Backend decides initial state and totals
- */
-export const createDraftSale = () => {
-  return axiosClient.post("/sales/");
-};
+import {
+  fetchSales as listSales,
+  fetchSaleById as getSaleById,
+  refundSale as refundSaleById,
+} from "../features/sales/sales.api";
 
-/**
- * Fetch a sale by ID
- * Used to render current truth (items, totals, status)
- */
-export const getSaleById = (saleId) => {
-  return axiosClient.get(`/sales/${saleId}/`);
-};
-
-/**
- * Add item to a draft sale
- * Backend updates quantities, totals, and stock validation
- */
-export const addItemToSale = ({ saleId, productId, quantity = 1 }) => {
-  return axiosClient.post(`/sales/${saleId}/items/`, {
-    product_id: productId,
-    quantity,
-  });
-};
-
-/**
- * Update item quantity in a draft sale
- * Quantity rules are enforced by backend
- */
-export const updateSaleItem = ({ saleId, itemId, quantity }) => {
-  return axiosClient.patch(`/sales/${saleId}/items/${itemId}/`, {
-    quantity,
-  });
-};
-
-/**
- * Remove item from a draft sale
- */
-export const removeItemFromSale = ({ saleId, itemId }) => {
-  return axiosClient.delete(`/sales/${saleId}/items/${itemId}/`);
-};
-
-/**
- * Complete a sale
- * This commits stock and locks the sale
- */
-export const completeSale = (saleId) => {
-  return axiosClient.post(`/sales/${saleId}/complete/`);
-};
+// Backward compatible exports
+export { listSales, getSaleById };
 
 /**
  * Refund a completed sale
- * Backend handles audit and stock restoration
+ * Signature kept flexible for older callers.
  */
-export const refundSale = ({ saleId, reason }) => {
-  return axiosClient.post(`/sales/${saleId}/refund/`, {
-    reason,
-  });
+export const refundSale = ({ saleId, reason, items } = {}) => {
+  return refundSaleById(saleId, { reason, items });
 };
 
-/**
- * List sales (history)
- * Backend controls filtering and visibility
- */
-export const listSales = () => {
-  return axiosClient.get("/sales/");
+// Legacy functions kept but intentionally not supported here
+// because POS now uses /pos/cart + /pos/checkout orchestration.
+// If you still need draft-sale style endpoints, we should build them
+// in ONE place and wire UI accordingly (not guess).
+export const createDraftSale = () => {
+  throw new Error(
+    "createDraftSale is deprecated. Use POS cart flow (/pos/cart + /pos/checkout)."
+  );
+};
+
+export const addItemToSale = () => {
+  throw new Error(
+    "addItemToSale is deprecated. Use POS cart flow (/pos/cart/items/add/)."
+  );
+};
+
+export const updateSaleItem = () => {
+  throw new Error(
+    "updateSaleItem is deprecated. Use POS cart flow (/pos/cart/items/:id/update/)."
+  );
+};
+
+export const removeItemFromSale = () => {
+  throw new Error(
+    "removeItemFromSale is deprecated. Use POS cart flow (/pos/cart/items/:id/remove/)."
+  );
+};
+
+export const completeSale = () => {
+  throw new Error(
+    "completeSale is deprecated. Use POS checkout flow (/pos/checkout/)."
+  );
 };

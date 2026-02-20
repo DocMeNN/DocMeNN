@@ -1,14 +1,3 @@
-// src/pages/PosPage.jsx
-
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { fetchProducts } from "../features/pos/pos.api";
-import { usePosStore } from "../stores/posStore";
-import { formatMoney } from "../utils/money";
-
-import CartPanel from "../features/pos/CartPanel";
-import CheckoutBar from "../features/pos/CheckoutBar";
-
 /**
  * ======================================================
  * PATH: src/pages/PosPage.jsx
@@ -38,6 +27,15 @@ import CheckoutBar from "../features/pos/CheckoutBar";
  *   /pos/:storeId/receipt/:saleId
  * ======================================================
  */
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { fetchProducts } from "../features/pos/pos.api";
+import { usePosStore } from "../stores/posStore";
+import { formatMoney } from "../utils/money";
+
+import CartPanel from "../features/pos/CartPanel";
+import CheckoutBar from "../features/pos/CheckoutBar";
 
 const PAYMENT_METHODS = [
   { value: "cash", label: "Cash" },
@@ -270,7 +268,9 @@ export default function PosPage() {
   const locked = isLocked();
   const storeReady = !!activeStoreId;
 
-  const cartHasItems = !!(cart && Array.isArray(cart.items) && cart.items.length);
+  const cartItems = Array.isArray(cart?.items) ? cart.items : [];
+  const cartHasItems = cartItems.length > 0;
+
   const cartTotalAmount = cart?.total_amount ?? cart?.subtotal_amount ?? 0;
 
   const { bySku, byBarcode } = useMemo(() => {
@@ -278,8 +278,11 @@ export default function PosPage() {
     const barcodeMap = new Map();
 
     for (const p of products || []) {
-      if (p?.sku != null) skuMap.set(String(p.sku).trim(), p);
-      if (p?.barcode != null) barcodeMap.set(String(p.barcode).trim(), p);
+      const sku = p?.sku != null ? String(p.sku).trim() : "";
+      const bc = p?.barcode != null ? String(p.barcode).trim() : "";
+
+      if (sku) skuMap.set(sku, p);
+      if (bc) barcodeMap.set(bc, p);
     }
 
     return { bySku: skuMap, byBarcode: barcodeMap };
@@ -313,10 +316,6 @@ export default function PosPage() {
     setProducts(Array.isArray(prods) ? prods : []);
   }
 
-  /**
-   * Ensure store context is set, then load store-scoped data.
-   * We use the passed sid for products to avoid any setState timing issues.
-   */
   async function hydrateStoreContext(sid, label = "Ready.") {
     const safe = String(sid || "").trim();
     if (!safe) {
@@ -474,7 +473,7 @@ export default function PosPage() {
     }
     clearMessages();
     try {
-      await mutateItem(item.product_id, 1);
+      await mutateItem(item.product_id ?? item.product?.id, 1);
     } catch (e) {
       setError(e?.message || "Failed to add item.");
     } finally {
@@ -490,7 +489,7 @@ export default function PosPage() {
     }
     clearMessages();
     try {
-      await mutateItem(item.product_id, -1);
+      await mutateItem(item.product_id ?? item.product?.id, -1);
     } catch (e) {
       setError(e?.message || "Failed to reduce item quantity.");
     } finally {
@@ -498,7 +497,6 @@ export default function PosPage() {
     }
   };
 
-  // Open payment modal instead of immediately checking out
   const handleCheckout = async () => {
     if (locked) return;
 
@@ -590,7 +588,6 @@ export default function PosPage() {
           note: String(a.note || "").trim(),
         }));
 
-        // backend sets payment_method="split" when allocations exist
         data = await checkout("split", payloadAllocations);
       } else {
         data = await checkout(singleMethod);
@@ -605,11 +602,11 @@ export default function PosPage() {
         cart?.subtotal_amount ??
         0;
 
-      const saleId = data?.id || data?.sale?.id || data?.sale_id || data?.saleId || null;
+      const saleId =
+        data?.id || data?.sale?.id || data?.sale_id || data?.saleId || null;
 
       const sid = resolveSid();
 
-      // Refresh cart + products (stock deduction reflects immediately)
       await loadCart();
       await reloadProductsForStore(sid);
 
@@ -667,7 +664,7 @@ export default function PosPage() {
         }))
       : null;
 
-  const itemRows = Array.isArray(cart?.items) ? cart.items : [];
+  const itemRows = cartItems;
 
   return (
     <div className="p-6 space-y-6">
@@ -799,7 +796,9 @@ export default function PosPage() {
           disabled={locked || !storeReady}
         />
 
-        {cartHasItems && <CheckoutBar onCheckout={handleCheckout} disabled={locked || !storeReady} />}
+        {cartHasItems && (
+          <CheckoutBar onCheckout={handleCheckout} disabled={locked || !storeReady} />
+        )}
       </div>
 
       {/* Payment Modal */}
@@ -877,7 +876,11 @@ export default function PosPage() {
                 </p>
               </div>
             ) : (
-              <SplitPaymentEditor totalAmount={cartTotalAmount} allocations={allocations} setAllocations={setAllocations} />
+              <SplitPaymentEditor
+                totalAmount={cartTotalAmount}
+                allocations={allocations}
+                setAllocations={setAllocations}
+              />
             )}
 
             {payMode === "split" && splitValidationMsg && !payUiError && (
@@ -936,13 +939,29 @@ export default function PosPage() {
               ) : (
                 <div className="space-y-2">
                   {itemRows.map((it, idx) => {
-                    const name = it?.product_name || it?.name || `Item ${idx + 1}`;
+                    const name =
+                      it?.product_name ||
+                      it?.name ||
+                      it?.product?.name ||
+                      `Item ${idx + 1}`;
+
                     const qty = Number(it?.quantity || 0);
-                    const unit = it?.unit_price ?? it?.unit_price_amount ?? 0;
-                    const lineTotal = it?.line_total ?? it?.total_amount ?? Number(unit || 0) * qty;
+
+                    const unit =
+                      it?.unit_price ??
+                      it?.unit_price_amount ??
+                      it?.product?.unit_price ??
+                      0;
+
+                    const lineTotal =
+                      it?.line_total ??
+                      it?.total_amount ??
+                      Number(unit || 0) * qty;
+
+                    const key = it?.id ?? `${it?.product_id ?? it?.product?.id ?? "x"}-${idx}`;
 
                     return (
-                      <div key={idx} className="flex items-start justify-between gap-3">
+                      <div key={key} className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{name}</p>
                           <p className="text-xs text-gray-500">

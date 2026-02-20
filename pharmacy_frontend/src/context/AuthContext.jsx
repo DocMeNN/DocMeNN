@@ -1,124 +1,75 @@
-// src/context/AuthContext.jsx
-
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { login as loginApi, getMe } from "../api/auth.api";
-
 /**
  * ======================================================
- * AUTH CONTEXT — SESSION SOURCE OF TRUTH
- * ------------------------------------------------------
- * Rules:
- * - Tokens live in localStorage
- * - User object lives ONLY in memory
- * - Backend (/me) is the authority
- * - Query cache must be cleared on logout
+ * PATH: src/lib/auth.js
+ * ======================================================
  *
- * Public storefront rule:
- * - When user is browsing /store/... we DO NOT ping /auth/me/
- *   (prevents noisy 401s and keeps public browsing clean)
+ * JWT TOKEN STORAGE + HELPERS
+ * - Single source of truth for token keys
+ * - Safe JWT decode (base64url)
  * ======================================================
  */
 
-const AuthContext = createContext(null);
+// Where we store JWT tokens (single standard across the app)
+const ACCESS_KEY = "accessToken";
+const REFRESH_KEY = "refreshToken";
 
-function isPublicStorefrontPath(pathname) {
-  const p = String(pathname || "");
-  return p === "/store" || p.startsWith("/store/");
+// Save tokens to localStorage
+export function saveTokens(access, refresh) {
+  if (access) localStorage.setItem(ACCESS_KEY, access);
+  if (refresh) localStorage.setItem(REFRESH_KEY, refresh);
 }
 
-export function AuthProvider({ children, queryClient }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function restoreSession() {
-      const path = window.location?.pathname || "/";
-      const onPublicStorefront = isPublicStorefrontPath(path);
-
-      // On public storefront, we don't need auth resolution at all.
-      // Keep tokens as-is (if any), but avoid calling /me and avoid console 401 noise.
-      if (onPublicStorefront) {
-        if (mounted) {
-          setUser(null);
-          setLoading(false);
-        }
-        return;
-      }
-
-      const accessToken = localStorage.getItem("access_token");
-
-      if (!accessToken) {
-        if (mounted) {
-          setUser(null);
-          setLoading(false);
-        }
-        return;
-      }
-
-      try {
-        const res = await getMe();
-        if (mounted) setUser(res.data);
-      } catch (err) {
-        // Token invalid/expired → wipe session + clear cache
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        if (queryClient) queryClient.clear();
-        if (mounted) setUser(null);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
-    restoreSession();
-
-    return () => {
-      mounted = false;
-    };
-  }, [queryClient]);
-
-  const login = async (credentials) => {
-    const userData = await loginApi(credentials);
-    setUser(userData);
-    return userData;
-  };
-
-  const logout = () => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    if (queryClient) queryClient.clear();
-    setUser(null);
-
-    // If they logged out while on public storefront, keep them in the storefront.
-    const path = window.location?.pathname || "/";
-    if (isPublicStorefrontPath(path)) {
-      window.location.href = "/store";
-      return;
-    }
-
-    window.location.href = "/login";
-  };
-
-  const value = useMemo(() => {
-    const role = user?.role || null;
-
-    return {
-      user,
-      role,
-      isAuthenticated: Boolean(user),
-      loading,
-      login,
-      logout,
-      hasRole: (allowedRoles = []) => Boolean(role) && allowedRoles.includes(role),
-    };
-  }, [user, loading]);
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+// Get Access Token
+export function getAccessToken() {
+  return localStorage.getItem(ACCESS_KEY);
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
+// Get Refresh Token
+export function getRefreshToken() {
+  return localStorage.getItem(REFRESH_KEY);
+}
+
+// Remove tokens (logout)
+export function clearTokens() {
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+}
+
+// base64url decode helper (JWT uses base64url, not plain base64)
+function base64UrlDecode(str) {
+  const s = String(str || "").replace(/-/g, "+").replace(/_/g, "/");
+  const pad = s.length % 4 ? "=".repeat(4 - (s.length % 4)) : "";
+  return atob(s + pad);
+}
+
+// Decode JWT to get payload (role, email, id)
+export function decodeJWT(token) {
+  try {
+    if (!token) return null;
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+
+    const payload = parts[1];
+    return JSON.parse(base64UrlDecode(payload));
+  } catch {
+    return null;
+  }
+}
+
+// Get user information from token (best-effort; backend /me is authority)
+export function getUserFromToken() {
+  const access = getAccessToken();
+  if (!access) return null;
+  return decodeJWT(access);
+}
+
+// Check if user is authenticated (token exists; not a validity guarantee)
+export function isLoggedIn() {
+  return Boolean(getAccessToken());
+}
+
+// Check if user has a role (Admin, Cashier, Pharmacist, Reception)
+export function hasRole(role) {
+  const user = getUserFromToken();
+  return user?.role === role;
 }

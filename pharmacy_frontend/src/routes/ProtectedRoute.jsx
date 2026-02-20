@@ -1,4 +1,14 @@
-// src/routes/ProtectedRoute.jsx
+/**
+ * ======================================================
+ * PATH: src/routes/ProtectedRoute.jsx
+ * ======================================================
+ *
+ * PROTECTED ROUTE + ERROR BOUNDARY
+ * - Blocks unauthorized access
+ * - Normalizes role checks (case-safe)
+ * - Wraps children with a RouteErrorBoundary
+ * ======================================================
+ */
 
 import React from "react";
 import { Navigate } from "react-router-dom";
@@ -28,7 +38,10 @@ class RouteErrorBoundary extends React.Component {
       // eslint-disable-next-line no-console
       console.error("[RouteErrorBoundary] Caught error:", error);
       // eslint-disable-next-line no-console
-      console.error("[RouteErrorBoundary] Component stack:", info?.componentStack);
+      console.error(
+        "[RouteErrorBoundary] Component stack:",
+        info?.componentStack
+      );
     }
   }
 
@@ -39,8 +52,7 @@ class RouteErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       const message =
-        this.state.error?.message ||
-        "A page component crashed while rendering.";
+        this.state.error?.message || "A page component crashed while rendering.";
 
       return (
         <div className="rounded-xl border bg-white p-6 max-w-2xl">
@@ -82,6 +94,10 @@ class RouteErrorBoundary extends React.Component {
   }
 }
 
+function normalizeRole(role) {
+  return String(role || "").trim().toLowerCase();
+}
+
 export default function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading, isAuthenticated } = useAuth();
 
@@ -99,9 +115,14 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     return <Navigate to="/login" replace />;
   }
 
-  // 🎭 Role-based access control
-  if (Array.isArray(allowedRoles) && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/unauthorized" replace />;
+  // 🎭 Role-based access control (case-safe)
+  if (Array.isArray(allowedRoles) && allowedRoles.length > 0) {
+    const role = normalizeRole(user?.role);
+    const allowed = allowedRoles.map(normalizeRole);
+
+    if (!allowed.includes(role)) {
+      return <Navigate to="/unauthorized" replace />;
+    }
   }
 
   // ✅ Access granted — but protected against render crashes

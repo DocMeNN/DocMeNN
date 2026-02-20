@@ -1,10 +1,3 @@
-// src/layouts/DashboardLayout.jsx
-
-import { useMemo } from "react";
-import { NavLink, Outlet } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
-import StoreSelector from "../components/StoreSelector";
-
 /**
  * ======================================================
  * PATH: src/layouts/DashboardLayout.jsx
@@ -23,9 +16,14 @@ import StoreSelector from "../components/StoreSelector";
  *
  * NOTE:
  * - We DO NOT re-dispatch the event here to avoid duplicates.
- * - If we want cross-page refetch, pages can listen to that event.
+ * - This layout listens to the event only to update the UI hint.
  * ======================================================
  */
+
+import { useEffect, useMemo, useState } from "react";
+import { NavLink, Outlet } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import StoreSelector from "../components/StoreSelector";
 
 export default function DashboardLayout() {
   const { user, role, hasRole, logout } = useAuth();
@@ -51,11 +49,24 @@ export default function DashboardLayout() {
   const isAdmin = hasRole(["admin"]);
   const isStaff = hasRole(["admin", "pharmacist", "cashier", "reception"]);
 
-  // Read current active store id for a small UI hint (optional)
-  const activeStoreId = useMemo(
-    () => String(localStorage.getItem("active_store_id") || "").trim() || null,
-    []
-  );
+  // UI hint only (kept in sync with StoreSelector events)
+  const [activeStoreId, setActiveStoreId] = useState(() => {
+    return String(localStorage.getItem("active_store_id") || "").trim() || null;
+  });
+
+  useEffect(() => {
+    const handler = (evt) => {
+      const sid = String(evt?.detail?.storeId || "").trim() || null;
+      setActiveStoreId(sid);
+    };
+
+    window.addEventListener("active-store-changed", handler);
+    return () => window.removeEventListener("active-store-changed", handler);
+  }, []);
+
+  const userLabel = useMemo(() => {
+    return user?.username || user?.email || role || "user";
+  }, [user, role]);
 
   return (
     <div className="min-h-screen flex bg-gray-100">
@@ -106,9 +117,7 @@ export default function DashboardLayout() {
         <div className="px-4 py-4 border-t border-gray-800 space-y-3">
           <div className="text-xs text-gray-400">
             Logged in as{" "}
-            <span className="text-gray-200 font-medium">
-              {user?.username || user?.email || role || "user"}
-            </span>
+            <span className="text-gray-200 font-medium">{userLabel}</span>
           </div>
 
           <button

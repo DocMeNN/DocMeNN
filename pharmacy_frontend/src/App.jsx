@@ -1,10 +1,3 @@
-// src/App.jsx
-
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AuthProvider } from "./context/AuthContext";
-import AppRoutes from "./routes/AppRoutes";
-
 /**
  * ======================================================
  * PATH: src/App.jsx
@@ -19,6 +12,11 @@ import AppRoutes from "./routes/AppRoutes";
  * - Global Error Boundary prevents “blank page” crashes
  * ======================================================
  */
+
+import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { AuthProvider } from "./context/AuthContext";
+import AppRoutes from "./routes/AppRoutes";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -90,8 +88,8 @@ class AppErrorBoundary extends React.Component {
             Something went wrong
           </h1>
           <p className="text-sm text-gray-600 mt-2">
-            A screen crashed while rendering. This is a safe fallback instead of a
-            blank page.
+            A screen crashed while rendering. This is a safe fallback instead of
+            a blank page.
           </p>
 
           <div className="mt-4 rounded-lg border bg-gray-50 p-3">

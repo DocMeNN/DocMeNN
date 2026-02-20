@@ -1,4 +1,3 @@
-// src/routes/AppRoutes.jsx
 /**
  * ======================================================
  * PATH: src/routes/AppRoutes.jsx
@@ -14,21 +13,13 @@
  *    - Staff:  /pos/:storeId/receipt/:saleId
  *
  * Phase 4 Paystack-safe flow:
- * - /store/:storeId/checkout   -> creates OnlineOrder + redirects to Paystack
+ * - /store/:storeId/checkout       -> creates OnlineOrder + redirects to Paystack
  * - /store/:storeId/order/:orderId -> polling bridge, waits for sale_id then redirects to receipt
  * ======================================================
  */
 
 import { useMemo, useState } from "react";
-import {
-  Routes,
-  Route,
-  Navigate,
-  Outlet,
-  useParams,
-  useNavigate,
-  Link,
-} from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useParams, Link } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
 import ProtectedRoute from "./ProtectedRoute";
@@ -110,21 +101,23 @@ import CustomerLayout from "../layouts/CustomerLayout";
    PUBLIC CHECKOUT SUPPORT
 ======================= */
 import { publicOrderInitiate } from "../features/pos/pos.api";
-import {
-  readPublicCart,
-  computePublicCartSubtotal,
-  countPublicCartItems,
-} from "../lib/publicCart";
+import { readPublicCart, computePublicCartSubtotal, countPublicCartItems } from "../lib/publicCart";
 import { formatMoney } from "../utils/money";
+
+function normalizeRole(role) {
+  return String(role || "").trim().toLowerCase();
+}
 
 /* =======================
    ROLE REDIRECT (STAFF)
 ======================= */
 function RoleRedirect() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+
+  if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
 
-  switch (user.role) {
+  switch (normalizeRole(user.role)) {
     case "admin":
       return <Navigate to="/dashboard/admin" replace />;
     case "pharmacist":
@@ -421,7 +414,9 @@ export default function AppRoutes() {
       {/* PROTECTED ERP APP */}
       <Route
         element={
-          <ProtectedRoute allowedRoles={["admin", "pharmacist", "cashier", "reception"]}>
+          <ProtectedRoute
+            allowedRoles={["admin", "pharmacist", "cashier", "reception"]}
+          >
             <DashboardLayout />
           </ProtectedRoute>
         }

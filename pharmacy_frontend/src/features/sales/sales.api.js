@@ -1,5 +1,3 @@
-// src/features/sales/sales.api.js
-
 /**
  * ======================================================
  * PATH: src/features/sales/sales.api.js
@@ -36,30 +34,30 @@ function extractErrorMessage(err, fallback = "Request failed.") {
   const status = err?.response?.status;
   const data = err?.response?.data;
 
-  // Our normalized backend errors:
-  // {"error": {"code": "...", "message": "..."}}
   if (data?.error && typeof data.error === "object") {
     const msg = String(data.error.message || "").trim();
     if (msg) return status ? `[${status}] ${msg}` : msg;
   }
 
-  // DRF common shapes
   if (typeof data?.detail === "string" && data.detail.trim()) {
     return status ? `[${status}] ${data.detail}` : data.detail;
   }
 
-  // {field: ["msg"]} or {field: "msg"}
   if (data && typeof data === "object" && !Array.isArray(data)) {
     const keys = Object.keys(data);
     if (keys.length) {
       const k = keys[0];
       const v = data[k];
-      if (Array.isArray(v) && v[0]) return status ? `[${status}] ${k}: ${v[0]}` : `${k}: ${v[0]}`;
-      if (typeof v === "string" && v.trim()) return status ? `[${status}] ${k}: ${v}` : `${k}: ${v}`;
+      if (Array.isArray(v) && v[0])
+        return status ? `[${status}] ${k}: ${v[0]}` : `${k}: ${v[0]}`;
+      if (typeof v === "string" && v.trim())
+        return status ? `[${status}] ${k}: ${v}` : `${k}: ${v}`;
     }
   }
 
-  if (!data) return status ? `[${status}] ${err?.message || fallback}` : err?.message || fallback;
+  if (!data)
+    return status ? `[${status}] ${err?.message || fallback}` : err?.message || fallback;
+
   if (typeof data === "string") return status ? `[${status}] ${data}` : data;
 
   return status ? `[${status}] ${fallback}` : fallback;
@@ -72,11 +70,8 @@ function resolveActiveStoreId() {
 export async function fetchSales({ storeId } = {}) {
   try {
     const sid = String(storeId || "").trim() || resolveActiveStoreId();
-
-    // Best-effort store filtering: backend supports store_id query param.
     const params = sid ? { store_id: sid } : undefined;
 
-    // NOTE: base URL already includes /api in axiosClient if you configured it that way.
     const res = await axiosClient.get("/sales/sales/", { params });
     return normalizeList(res.data);
   } catch (err) {
@@ -92,11 +87,14 @@ export async function fetchSaleById(saleId) {
     const res = await axiosClient.get(`/sales/sales/${sid}/`);
 
     if (!res.data || typeof res.data !== "object") throw new Error("Invalid sale response.");
-    // Some serializers may return {sale:{...}} — accept both
-    const sale = res.data?.sale && typeof res.data.sale === "object" ? res.data.sale : res.data;
-    if (!sale?.id && !res.data?.id) throw new Error("Invalid sale response (missing id).");
 
-    return res.data;
+    // Some serializers may return {sale:{...}} — accept both and return the sale object
+    const sale =
+      res.data?.sale && typeof res.data.sale === "object" ? res.data.sale : res.data;
+
+    if (!sale?.id) throw new Error("Invalid sale response (missing id).");
+
+    return sale;
   } catch (err) {
     throw new Error(extractErrorMessage(err, "Failed to fetch sale."));
   }
@@ -113,9 +111,7 @@ export async function refundSale(saleId, payload = {}) {
     if (reason) body.reason = reason;
 
     if (Array.isArray(payload?.items)) {
-      // FULL refund: either omit items OR items=[]
-      // PARTIAL refund: items=[{sale_item_id, quantity}, ...]
-      body.items = payload.items;
+      body.items = payload.items; // FULL: [] or omit; PARTIAL: [{sale_item_id, quantity}]
     }
 
     const res = await axiosClient.post(`/sales/sales/${sid}/refund/`, body);
@@ -124,8 +120,6 @@ export async function refundSale(saleId, payload = {}) {
       throw new Error("Refund failed (invalid response).");
     }
 
-    // If backend returns DRF detail on success, still accept.
-    // Only throw if it clearly indicates failure.
     if (res.data?.detail && String(res.data.detail).toLowerCase().includes("failed")) {
       throw new Error(String(res.data.detail));
     }
@@ -135,4 +129,3 @@ export async function refundSale(saleId, payload = {}) {
     throw new Error(extractErrorMessage(err, "Refund failed."));
   }
 }
-

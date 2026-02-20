@@ -1,6 +1,16 @@
-// src/features/auth/Login.jsx
+/**
+ * ======================================================
+ * PATH: src/features/auth/Login.jsx
+ * ======================================================
+ *
+ * LOGIN PAGE
+ * - Uses AuthContext.login() (auth.api handles tokens)
+ * - Normalizes role for safe routing
+ * - Redirects to role dashboard routes
+ * ======================================================
+ */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
@@ -13,6 +23,17 @@ function getErrorMessage(err) {
   );
 }
 
+function normalizeRole(role) {
+  return String(role || "").trim().toLowerCase();
+}
+
+const ROLE_HOME = {
+  admin: "/dashboard/admin",
+  pharmacist: "/dashboard/pharmacist",
+  cashier: "/dashboard/cashier",
+  reception: "/dashboard/reception",
+};
+
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -21,8 +42,13 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const canSubmit =
-    form.email.trim().length > 0 && form.password.trim().length > 0 && !loading;
+  const canSubmit = useMemo(() => {
+    return (
+      form.email.trim().length > 0 &&
+      form.password.trim().length > 0 &&
+      !loading
+    );
+  }, [form.email, form.password, loading]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -37,23 +63,10 @@ export default function Login() {
         password: form.password,
       });
 
-      // ✅ Redirect to the routes that actually exist in AppRoutes.jsx
-      switch (user?.role) {
-        case "admin":
-          navigate("/dashboard/admin", { replace: true });
-          break;
-        case "pharmacist":
-          navigate("/dashboard/pharmacist", { replace: true });
-          break;
-        case "cashier":
-          navigate("/dashboard/cashier", { replace: true });
-          break;
-        case "reception":
-          navigate("/dashboard/reception", { replace: true });
-          break;
-        default:
-          navigate("/", { replace: true });
-      }
+      const role = normalizeRole(user?.role);
+      const target = ROLE_HOME[role] || "/";
+
+      navigate(target, { replace: true });
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {

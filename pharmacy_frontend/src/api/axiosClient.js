@@ -1,19 +1,21 @@
-// src/api/axiosClient.js
-
-import axios from "axios";
-
 /**
  * ======================================================
+ * PATH: src/api/axiosClient.js
+ * ======================================================
+ *
  * AXIOS CLIENT — SINGLE SOURCE OF NETWORK TRUTH
  * ------------------------------------------------------
  * Responsibilities:
- * - Attach auth tokens
+ * - Attach auth tokens (via lib/auth.js keys)
  * - Enforce consistent headers
  * - Handle global auth failures
  * - Token refresh (single-flight, retry once)
  * - NEVER hide errors
  * ======================================================
  */
+
+import axios from "axios";
+import { getAccessToken, getRefreshToken, saveTokens, clearTokens } from "../lib/auth";
 
 // Base host (no /api here)
 const API_HOST =
@@ -22,8 +24,7 @@ const API_HOST =
   "http://127.0.0.1:8000";
 
 // API prefix (default /api)
-const API_PREFIX =
-  import.meta?.env?.VITE_API_PREFIX?.trim() || "/api";
+const API_PREFIX = import.meta?.env?.VITE_API_PREFIX?.trim() || "/api";
 
 // Normalize join (avoid double slashes)
 function joinUrl(host, prefix) {
@@ -45,24 +46,6 @@ const axiosClient = axios.create({
     Accept: "application/json",
   },
 });
-
-/** -----------------------------
- * Token helpers
- * ----------------------------- */
-function getAccessToken() {
-  return localStorage.getItem("access_token");
-}
-function getRefreshToken() {
-  return localStorage.getItem("refresh_token");
-}
-function clearTokens() {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
-}
-function setTokens({ access, refresh }) {
-  if (access) localStorage.setItem("access_token", access);
-  if (refresh) localStorage.setItem("refresh_token", refresh);
-}
 
 /** -----------------------------
  * Request Interceptor
@@ -120,7 +103,8 @@ async function refreshAccessToken() {
   const access = res?.data?.access;
   if (!access) throw new Error("Token refresh failed");
 
-  setTokens({ access });
+  // Persist new access token, reuse refresh token
+  saveTokens(access, refresh);
   return access;
 }
 
