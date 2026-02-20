@@ -11,7 +11,7 @@
  * ======================================================
  */
 
-import axiosClient from "./axiosClient";
+import axiosClient from "../api/axiosClient";
 import { saveTokens, clearTokens } from "../lib/auth";
 
 /**
