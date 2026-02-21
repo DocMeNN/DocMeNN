@@ -1,6 +1,6 @@
 asgiref==3.11.0
 attrs==25.4.0
-Django==5.0.14
+Django==5.2.11
 django-cors-headers==4.9.0
 django-environ==0.12.0
 django-filter==25.2
