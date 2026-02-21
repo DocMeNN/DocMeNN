@@ -1,3 +1,5 @@
+# accounting/services/pos_accounting_service.py
+ 
 """
 POS → ACCOUNTING ORCHESTRATOR
 
