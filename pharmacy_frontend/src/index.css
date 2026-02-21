@@ -1,4 +1,7 @@
-// src/index.css
+/* ======================================================
+   PATH: src/index.css
+   ====================================================== */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,6 +11,10 @@ body,
 #root {
   height: 100%;
   width: 100%;
-  max-width: 100%;
+  margin: 0;
+}
+
+/* Stop horizontal overflow globally */
+body {
   overflow-x: hidden;
 }
