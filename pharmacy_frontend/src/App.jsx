@@ -1,18 +1,4 @@
-/**
- * ======================================================
- * PATH: src/App.jsx
- * ======================================================
- *
- * APPLICATION ROOT
- * ------------------------------------------------------
- * - React Query is first-class infrastructure
- * - Single QueryClient for the entire app
- * - Backend remains source of truth
- * - Query cache is cleared on logout (prevents role data bleed)
- * - Global Error Boundary prevents “blank page” crashes
- * ======================================================
- */
-
+// src/App.jsx
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "./context/AuthContext";
@@ -31,14 +17,6 @@ export const queryClient = new QueryClient({
   },
 });
 
-/**
- * ======================================================
- * GLOBAL ERROR BOUNDARY
- * ------------------------------------------------------
- * Prevents white screens when a component crashes at runtime.
- * Shows a friendly fallback with a safe reset action.
- * ======================================================
- */
 class AppErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -50,7 +28,6 @@ class AppErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    // Keep this loud in DEV — helps us fix fast
     // eslint-disable-next-line no-console
     console.error("App crashed:", error);
     // eslint-disable-next-line no-console
@@ -59,7 +36,6 @@ class AppErrorBoundary extends React.Component {
 
   handleReset = () => {
     try {
-      // Reset react-query cache (prevents “stuck” error state)
       if (this.props.queryClient?.clear) {
         this.props.queryClient.clear();
       } else if (this.props.queryClient?.getQueryCache) {
@@ -70,7 +46,6 @@ class AppErrorBoundary extends React.Component {
       console.warn("Failed to clear query cache:", e);
     }
 
-    // Force a clean reload (guaranteed reset)
     window.location.href = "/";
   };
 
@@ -82,7 +57,7 @@ class AppErrorBoundary extends React.Component {
       "The app ran into a problem and had to stop rendering.";
 
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6 overflow-x-hidden">
         <div className="w-full max-w-xl bg-white border rounded-xl p-6">
           <h1 className="text-xl font-semibold text-gray-900">
             Something went wrong
@@ -129,7 +104,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AppErrorBoundary queryClient={queryClient}>
         <AuthProvider queryClient={queryClient}>
-          <AppRoutes />
+          <div className="min-h-screen w-full overflow-x-hidden">
+            <AppRoutes />
+          </div>
         </AuthProvider>
       </AppErrorBoundary>
     </QueryClientProvider>

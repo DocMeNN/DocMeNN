@@ -1,3 +1,4 @@
+// src/layouts/DashboardLayout.jsx
 /**
  * ======================================================
  * PATH: src/layouts/DashboardLayout.jsx
@@ -5,18 +6,16 @@
  *
  * DASHBOARD LAYOUT (STAFF SHELL)
  * ------------------------------------------------------
- * Adds StoreSelector at layout level so:
- * - Inventory / POS / Sales are always store-scoped
- * - active_store_id is set before critical workflows
+ * Mobile-first layout hardening:
+ * - Prevent global horizontal overflow (the #1 cause of “zoom to fit”)
+ * - Sidebar becomes top drawer strip on mobile (still accessible)
+ * - Main area uses min-w-0 so children can shrink (tables/cards stop forcing width)
+ * - Page content gets overflow-x-auto so wide reports scroll inside the page
+ * - Uses min-h-dvh for better mobile browser behavior
  *
- * Store change strategy:
+ * Store scope rules unchanged:
  * - StoreSelector persists localStorage.active_store_id
  * - StoreSelector dispatches "active-store-changed"
- *   detail: { storeId }
- *
- * NOTE:
- * - We DO NOT re-dispatch the event here to avoid duplicates.
- * - This layout listens to the event only to update the UI hint.
  * ======================================================
  */
 
@@ -69,21 +68,20 @@ export default function DashboardLayout() {
   }, [user, role]);
 
   return (
-    <div className="min-h-screen flex bg-gray-100">
+    <div className="min-h-dvh bg-gray-100 flex flex-col md:flex-row max-w-[100vw] overflow-x-hidden min-w-0">
       {/* Sidebar */}
-      <aside className="w-64 bg-gray-900 text-gray-100 flex flex-col">
-        <div className="px-6 py-5 text-xl font-bold border-b border-gray-800">
+      <aside className="bg-gray-900 text-gray-100 flex flex-col md:w-64 w-full md:h-auto shrink-0 min-w-0">
+        <div className="px-4 sm:px-6 py-4 text-lg sm:text-xl font-bold border-b border-gray-800">
           {headerLabel}
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-2">
+        {/* On mobile: make nav horizontally scrollable to avoid squeezing/overflow */}
+        <nav className="flex-1 px-2 sm:px-4 py-3 sm:py-6 md:space-y-2 flex md:block gap-2 md:gap-0 overflow-x-auto md:overflow-visible">
           <SidebarLink to={dashboardPath} label="Dashboard" />
 
-          {/* ✅ Staff Inventory (stock/pricing) */}
           <SidebarLink to="/inventory" label="Inventory" />
           <SidebarLink to="/inventory/expiry-alerts" label="Expiry Alerts" />
 
-          {/* ✅ Public Online Store */}
           <SidebarLink to="/store" label="Online Store" />
 
           <SidebarLink to="/sales" label="Sales" />
@@ -91,7 +89,7 @@ export default function DashboardLayout() {
 
           {isStaff && (
             <>
-              <div className="pt-4 mt-4 border-t border-gray-800 text-xs uppercase text-gray-400">
+              <div className="hidden md:block pt-4 mt-4 border-t border-gray-800 text-xs uppercase text-gray-400">
                 Accounting
               </div>
 
@@ -114,10 +112,12 @@ export default function DashboardLayout() {
           )}
         </nav>
 
-        <div className="px-4 py-4 border-t border-gray-800 space-y-3">
+        <div className="px-3 sm:px-4 py-3 sm:py-4 border-t border-gray-800 space-y-3">
           <div className="text-xs text-gray-400">
             Logged in as{" "}
-            <span className="text-gray-200 font-medium">{userLabel}</span>
+            <span className="text-gray-200 font-medium break-words">
+              {userLabel}
+            </span>
           </div>
 
           <button
@@ -131,10 +131,10 @@ export default function DashboardLayout() {
       </aside>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 min-w-0 max-w-[100vw] overflow-x-hidden">
         {/* Top bar */}
-        <div className="bg-white border-b px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
+        <div className="bg-white border-b px-4 sm:px-6 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 min-w-0">
+          <div className="min-w-0">
             <div className="text-sm text-gray-500">Workspace</div>
             <div className="text-lg font-semibold text-gray-900">
               {headerLabel} Dashboard
@@ -148,12 +148,19 @@ export default function DashboardLayout() {
           </div>
 
           {/* StoreSelector handles localStorage + event dispatch */}
-          <StoreSelector />
+          <div className="min-w-0">
+            <StoreSelector />
+          </div>
         </div>
 
-        {/* Page content */}
-        <div className="p-6">
-          <Outlet />
+        {/* Page content
+            - overflow-x-auto: wide tables scroll INSIDE content area
+            - min-w-0: prevents child forcing page width
+        */}
+        <div className="p-4 sm:p-6 min-w-0 overflow-x-auto">
+          <div className="min-w-0">
+            <Outlet />
+          </div>
         </div>
       </main>
     </div>
@@ -165,11 +172,17 @@ function SidebarLink({ to, label }) {
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `block px-3 py-2 rounded-md transition ${
+        [
+          // Mobile: keep items compact and prevent wrapping that forces width
+          "shrink-0 whitespace-nowrap",
+          // Desktop: normal block links
+          "md:block",
+          // Common styling
+          "px-3 py-2 rounded-md transition text-sm",
           isActive
             ? "bg-gray-800 text-white font-semibold"
-            : "text-gray-300 hover:bg-gray-800 hover:text-white"
-        }`
+            : "text-gray-300 hover:bg-gray-800 hover:text-white",
+        ].join(" ")
       }
     >
       {label}
