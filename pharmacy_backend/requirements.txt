@@ -21,3 +21,4 @@ ruff==0.15.1
 sqlparse==0.5.5
 tzdata==2025.3
 uritemplate==4.2.0
+whitenoise==6.11.0
