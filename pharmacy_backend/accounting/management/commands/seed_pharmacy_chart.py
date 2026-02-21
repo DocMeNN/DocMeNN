@@ -6,6 +6,10 @@ from django.db import transaction
 from accounting.models.account import Account
 from accounting.models.chart import ChartOfAccounts
 
+PHARMACY_CODE = "pharmacy_standard"
+PHARMACY_NAME = "Pharmacy Standard Chart"
+PHARMACY_INDUSTRY = "Pharmaceuticals"
+
 
 def _activate_only_this_chart(chart: ChartOfAccounts) -> None:
     ChartOfAccounts.objects.exclude(id=chart.id).filter(is_active=True).update(
@@ -23,36 +27,56 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write("Seeding Pharmacy Chart of Accounts...")
 
-        chart, created = ChartOfAccounts.objects.get_or_create(
-            name="Pharmacy",
-            defaults={
-                "industry": "Pharmaceuticals",
-                "code": "pharmacy_standard",
-                "business_type": ChartOfAccounts.BUSINESS_PHARMACY,
-                "is_active": True,
-            },
-        )
-
-        # Backfill / correct for existing rows
-        changed = False
-        if chart.industry != "Pharmaceuticals":
-            chart.industry = "Pharmaceuticals"
-            changed = True
-        if not chart.code:
-            chart.code = "pharmacy_standard"
-            changed = True
-        if not chart.business_type:
-            chart.business_type = ChartOfAccounts.BUSINESS_PHARMACY
-            changed = True
-        if changed:
-            chart.save()
-
-        _activate_only_this_chart(chart)
+        # ------------------------------------------------------------
+        # ✅ IMPORTANT: Resolve by STABLE code first (tenant-safe key)
+        # ------------------------------------------------------------
+        qs = ChartOfAccounts.objects.filter(code=PHARMACY_CODE).order_by("id")
+        if qs.exists():
+            chart = qs.first()
+            created = False
+        else:
+            # Fallback for legacy DBs: find by name if code isn't set yet
+            chart = (
+                ChartOfAccounts.objects.filter(name__iexact=PHARMACY_NAME).first()
+                or ChartOfAccounts.objects.filter(name__iexact="Pharmacy").first()
+            )
+            created = chart is None
 
         if created:
+            chart = ChartOfAccounts.objects.create(
+                name=PHARMACY_NAME,
+                industry=PHARMACY_INDUSTRY,
+                code=PHARMACY_CODE,
+                business_type=ChartOfAccounts.BUSINESS_PHARMACY,
+                is_active=True,
+            )
             self.stdout.write("Created Pharmacy chart")
         else:
+            # Backfill / correct existing row
+            changed = False
+
+            if (chart.name or "").strip() != PHARMACY_NAME:
+                chart.name = PHARMACY_NAME
+                changed = True
+
+            if (getattr(chart, "industry", "") or "").strip() != PHARMACY_INDUSTRY:
+                chart.industry = PHARMACY_INDUSTRY
+                changed = True
+
+            if not (getattr(chart, "code", None) or "").strip():
+                chart.code = PHARMACY_CODE
+                changed = True
+
+            if not (getattr(chart, "business_type", None) or "").strip():
+                chart.business_type = ChartOfAccounts.BUSINESS_PHARMACY
+                changed = True
+
+            if changed:
+                chart.save()
+
             self.stdout.write("Pharmacy chart already exists (updated if needed)")
+
+        _activate_only_this_chart(chart)
 
         accounts = [
             # ASSETS
