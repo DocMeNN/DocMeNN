@@ -388,6 +388,23 @@ export default function InventoryPage() {
     return sortProducts(list, sortKey);
   }, [products, query, onlyActive, onlyLowStock, sortKey]);
 
+  // ✅ Expiry preview (derived values)
+  const expRows = useMemo(() => normalizeExpiring(expiryQuery.data), [expiryQuery.data]);
+  const expCount = expRows.length;
+
+  const expTop = useMemo(() => {
+    return [...expRows]
+      .sort((a, b) => {
+        const da = daysLeft(a.expiryDate);
+        const db = daysLeft(b.expiryDate);
+        const na = da === null ? Number.POSITIVE_INFINITY : da;
+        const nb = db === null ? Number.POSITIVE_INFINITY : db;
+        if (na !== nb) return na - nb;
+        return String(a.expiryDate || "").localeCompare(String(b.expiryDate || ""));
+      })
+      .slice(0, 6);
+  }, [expRows]);
+
   const openAdd = () => {
     setAddErr("");
     setForm({
@@ -451,7 +468,6 @@ export default function InventoryPage() {
       await createProduct(payload, { storeId: activeStoreId });
       setAddOpen(false);
       await refetch();
-      // expiry preview should be consistent after any inventory change
       expiryQuery.refetch?.();
     } catch (e) {
       setAddErr(e?.message || "Failed to create product.");
@@ -536,7 +552,7 @@ export default function InventoryPage() {
   };
 
   // --------------------------------------
-  // Render guards
+  // Render guards (AFTER all hooks)
   // --------------------------------------
   if (!activeStoreId) {
     return (
@@ -572,23 +588,6 @@ export default function InventoryPage() {
       </div>
     );
   }
-
-  // Expiry preview computed
-  const expRows = normalizeExpiring(expiryQuery.data);
-  const expCount = expRows.length;
-
-  const expTop = useMemo(() => {
-    return [...expRows]
-      .sort((a, b) => {
-        const da = daysLeft(a.expiryDate);
-        const db = daysLeft(b.expiryDate);
-        const na = da === null ? Number.POSITIVE_INFINITY : da;
-        const nb = db === null ? Number.POSITIVE_INFINITY : db;
-        if (na !== nb) return na - nb;
-        return String(a.expiryDate || "").localeCompare(String(b.expiryDate || ""));
-      })
-      .slice(0, 6);
-  }, [expiryQuery.data]); // safe: depends on data changing
 
   return (
     <div className="p-4 space-y-4">
@@ -694,7 +693,10 @@ export default function InventoryPage() {
 
         {expiryQuery.isError ? (
           <div className="mt-3 text-xs text-red-700">
-            {getErrorMessage(expiryQuery.error, "Failed to load expiry alerts preview.")}
+            {getErrorMessage(
+              expiryQuery.error,
+              "Failed to load expiry alerts preview."
+            )}
           </div>
         ) : expiryQuery.isLoading ? (
           <div className="mt-3 text-sm text-gray-600">Loading expiry alerts…</div>
@@ -725,7 +727,8 @@ export default function InventoryPage() {
                   </div>
 
                   <div className="mt-2 text-xs text-gray-700">
-                    Expiry: <span className="font-medium">{formatDate(b.expiryDate)}</span>
+                    Expiry:{" "}
+                    <span className="font-medium">{formatDate(b.expiryDate)}</span>
                   </div>
                   <div className="mt-1 text-xs text-gray-700">
                     Qty remaining:{" "}
@@ -771,10 +774,7 @@ export default function InventoryPage() {
                 <div className="mt-2 text-sm text-gray-800">
                   Stock: <span className="font-semibold">{p.stock}</span>
                   {p.threshold !== null ? (
-                    <span className="text-gray-600">
-                      {" "}
-                      / Thresh: {p.threshold}
-                    </span>
+                    <span className="text-gray-600"> / Thresh: {p.threshold}</span>
                   ) : null}
                 </div>
 
@@ -835,9 +835,7 @@ export default function InventoryPage() {
 
         <div className="mt-3 text-xs text-gray-600">
           Showing{" "}
-          <span className="font-semibold text-gray-900">
-            {filtered.length}
-          </span>{" "}
+          <span className="font-semibold text-gray-900">{filtered.length}</span>{" "}
           result(s)
         </div>
       </div>
@@ -940,6 +938,7 @@ export default function InventoryPage() {
           closeAdd();
         }}
       >
+        {/* unchanged modal content */}
         <div className="space-y-4">
           <div className="text-xs text-gray-600">
             Store scope:{" "}
@@ -1092,6 +1091,7 @@ export default function InventoryPage() {
           closeIntake();
         }}
       >
+        {/* unchanged modal content */}
         <div className="space-y-4">
           <div className="text-xs text-gray-600">
             Store scope:{" "}
@@ -1105,9 +1105,7 @@ export default function InventoryPage() {
               </label>
               <select
                 value={intakeForm.product_id}
-                onChange={(e) =>
-                  onIntakeChange({ product_id: e.target.value })
-                }
+                onChange={(e) => onIntakeChange({ product_id: e.target.value })}
                 className="h-10 w-full rounded-lg border bg-white px-3 text-sm"
               >
                 <option value="">— Select product —</option>
@@ -1157,9 +1155,7 @@ export default function InventoryPage() {
               <input
                 type="date"
                 value={intakeForm.expiry_date}
-                onChange={(e) =>
-                  onIntakeChange({ expiry_date: e.target.value })
-                }
+                onChange={(e) => onIntakeChange({ expiry_date: e.target.value })}
                 className="h-10 w-full rounded-lg border px-3 text-sm"
               />
             </div>
