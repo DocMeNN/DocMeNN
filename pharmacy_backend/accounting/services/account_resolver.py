@@ -8,30 +8,11 @@ ACCOUNT RESOLVER (AUTHORITATIVE)
 This module answers ONE question:
 "Which account should be used for this purpose?"
 
-It is chart-aware: different charts may use different codes
-for the same semantic account (e.g., Inventory code differs).
-
-Design goals:
-- deterministic
-- chart-safe
-- hard-fail on missing setup (so we don't post to wrong accounts)
-
-HOTSPRINT UPGRADE:
-- Adds COGS semantic + get_cogs_account() for cost-side posting.
-- Hardened mapping behavior + clearer failure messages.
-- More resilient chart-key matching (not brittle on chart.name formatting).
-
-PHASE 5 UPGRADE (Tenant Safety Helpers):
-- Keep existing get_active_chart() behavior (single active chart) for backward compatibility.
-- Add best-effort chart resolution helpers for multi-business isolation:
-    - get_chart_for_business(business_id)
-    - user_can_access_business(user, business_id)
-  These helpers do NOT assume your schema, but will enforce scoping if ChartOfAccounts
-  exposes a business relation (e.g., business_id / business FK).
-
 ADR-001 (Bootstrap CoA):
-- If no active chart exists, automatically bootstrap ONE safely (idempotent).
-- If multiple active charts exist, hard-fail (do NOT auto-fix silently).
+- If no active chart exists, bootstrap ONE safely (idempotent).
+- If multiple active charts exist, hard-fail (never guess).
+- If we must create a new chart, we MUST satisfy ChartOfAccounts.clean():
+  provide code + business_type (because clean() requires them on add).
 """
 
 from __future__ import annotations
@@ -103,8 +84,10 @@ DEFAULT_CODES = {
     "COGS": "5000",
 }
 
-# ADR-001: default name used when we must create a brand-new chart
+# ADR-001: Defaults used ONLY when we must create a chart (fresh DB)
 DEFAULT_BOOTSTRAP_CHART_NAME = "Pharmacy Standard Chart"
+DEFAULT_BOOTSTRAP_CHART_CODE = "pharmacy_standard"
+DEFAULT_BOOTSTRAP_BUSINESS_TYPE = ChartOfAccounts.BUSINESS_PHARMACY
 
 
 def _norm(s: str) -> str:
@@ -151,9 +134,6 @@ def _codes_for_chart(chart: ChartOfAccounts) -> dict:
 
 
 def _has_chart_field(field_name: str) -> bool:
-    """
-    Safe schema probe. Returns True if ChartOfAccounts has field field_name.
-    """
     try:
         ChartOfAccounts._meta.get_field(field_name)
         return True
@@ -173,10 +153,11 @@ def _ensure_single_active_chart() -> ChartOfAccounts:
     - If none active -> activate an existing chart if present, else create one
     - If multiple active -> hard-fail (do NOT auto-fix silently)
 
-    This runs inside a DB transaction to be concurrency-safe.
+    IMPORTANT:
+    ChartOfAccounts.clean() requires code + business_type on ADD.
+    So if we create, we provide both.
     """
     with transaction.atomic():
-        # lock the active set for concurrency safety
         active_qs = ChartOfAccounts.objects.select_for_update().filter(is_active=True)
         active_count = active_qs.count()
 
@@ -188,14 +169,14 @@ def _ensure_single_active_chart() -> ChartOfAccounts:
                 "Multiple active Charts of Accounts found. Only one active chart is allowed."
             )
 
-        # active_count == 0: bootstrap path
-        # Prefer activating an existing chart to avoid failing on required fields.
+        # No active chart. Prefer activating an existing chart (least risky).
         existing = ChartOfAccounts.objects.select_for_update().order_by("id").first()
         if existing:
-            # Ensure no other charts are active (should already be true, but keep it explicit)
             ChartOfAccounts.objects.select_for_update().filter(is_active=True).update(
                 is_active=False
             )
+
+            # Activate without altering other fields.
             existing.is_active = True
             existing.save(update_fields=["is_active"])
 
@@ -206,15 +187,26 @@ def _ensure_single_active_chart() -> ChartOfAccounts:
             )
             return existing
 
-        # No charts exist at all: create a default one
-        chart = ChartOfAccounts.objects.create(
-            name=DEFAULT_BOOTSTRAP_CHART_NAME,
-            is_active=True,
-        )
+        # No charts exist at all: create a safe default chart.
+        create_kwargs = {
+            "name": DEFAULT_BOOTSTRAP_CHART_NAME,
+            "is_active": True,
+        }
+
+        # Only supply these if model actually has them (it does in your code)
+        if _has_chart_field("code"):
+            create_kwargs["code"] = DEFAULT_BOOTSTRAP_CHART_CODE
+        if _has_chart_field("business_type"):
+            create_kwargs["business_type"] = DEFAULT_BOOTSTRAP_BUSINESS_TYPE
+
+        chart = ChartOfAccounts.objects.create(**create_kwargs)
+
         logger.warning(
-            "ADR-001 bootstrap: Created default ChartOfAccounts id=%s name=%s",
+            "ADR-001 bootstrap: Created default ChartOfAccounts id=%s name=%s code=%s business_type=%s",
             getattr(chart, "id", None),
             getattr(chart, "name", None),
+            getattr(chart, "code", None),
+            getattr(chart, "business_type", None),
         )
         return chart
 
@@ -264,18 +256,6 @@ def get_active_chart_signature() -> str:
 
 
 def get_chart_for_business(business_id: int) -> ChartOfAccounts:
-    """
-    Best-effort: resolve chart by business.
-
-    Supported schemas (if present on ChartOfAccounts):
-    - business_id (int field)
-    - business (FK) -> uses business_id behind the scenes
-
-    If your schema does NOT include these fields, we hard-fail with a clear message,
-    because we cannot safely prevent cross-business posting.
-
-    This is intentionally strict: tenant safety > convenience.
-    """
     if business_id is None:
         raise AccountResolutionError("business_id is required")
 
@@ -291,8 +271,6 @@ def get_chart_for_business(business_id: int) -> ChartOfAccounts:
             "Add business scoping to ChartOfAccounts to enforce tenant isolation."
         )
 
-    # If you expect multiple charts per business, tighten this to select “active within business”.
-    # For now, prefer an active chart if present, else fall back to first.
     active = qs.filter(is_active=True).first()
     if active:
         return active
@@ -304,21 +282,11 @@ def get_chart_for_business(business_id: int) -> ChartOfAccounts:
 
 
 def user_can_access_business(user, business_id: int) -> bool:
-    """
-    Central policy hook for endpoints that accept business_id.
-
-    Current safe rule:
-    - Superuser: allowed
-    - Otherwise: if charts are business-scoped, user can only act on the active chart's business.
-
-    If you later add a membership model (UserBusiness, etc.), enforce it here.
-    """
     if not user or not getattr(user, "is_authenticated", False):
         return False
     if getattr(user, "is_superuser", False):
         return True
 
-    # If ChartOfAccounts is business-scoped, enforce "active business only"
     chart = get_active_chart()
 
     if _has_chart_field("business_id"):
@@ -327,7 +295,6 @@ def user_can_access_business(user, business_id: int) -> bool:
         b = getattr(chart, "business", None)
         return bool(b and int(getattr(b, "id", -1)) == int(business_id))
 
-    # If schema is not scoped, we cannot safely assert access. Deny by default.
     return False
 
 
@@ -379,62 +346,44 @@ def _get_account_by_code(*, chart: ChartOfAccounts, code: str) -> Account:
 
 def get_cash_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(
-        chart=chart, code=_resolve_code(semantic_key="CASH", chart=chart)
-    )
+    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="CASH", chart=chart))
 
 
 def get_bank_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(
-        chart=chart, code=_resolve_code(semantic_key="BANK", chart=chart)
-    )
+    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="BANK", chart=chart))
 
 
 def get_accounts_receivable_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(
-        chart=chart, code=_resolve_code(semantic_key="AR", chart=chart)
-    )
+    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="AR", chart=chart))
 
 
 def get_inventory_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(
-        chart=chart, code=_resolve_code(semantic_key="INVENTORY", chart=chart)
-    )
+    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="INVENTORY", chart=chart))
 
 
 def get_cogs_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(
-        chart=chart, code=_resolve_code(semantic_key="COGS", chart=chart)
-    )
+    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="COGS", chart=chart))
 
 
 def get_accounts_payable_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(
-        chart=chart, code=_resolve_code(semantic_key="ACCOUNTS_PAYABLE", chart=chart)
-    )
+    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="ACCOUNTS_PAYABLE", chart=chart))
 
 
 def get_sales_revenue_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(
-        chart=chart, code=_resolve_code(semantic_key="SALES_REVENUE", chart=chart)
-    )
+    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="SALES_REVENUE", chart=chart))
 
 
 def get_sales_discount_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(
-        chart=chart, code=_resolve_code(semantic_key="SALES_DISCOUNT", chart=chart)
-    )
+    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="SALES_DISCOUNT", chart=chart))
 
 
 def get_vat_payable_account() -> Account:
     chart = get_active_chart()
-    return _get_account_by_code(
-        chart=chart, code=_resolve_code(semantic_key="VAT_PAYABLE", chart=chart)
-    )
+    return _get_account_by_code(chart=chart, code=_resolve_code(semantic_key="VAT_PAYABLE", chart=chart))
