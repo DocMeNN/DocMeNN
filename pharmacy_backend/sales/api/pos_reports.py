@@ -16,10 +16,18 @@ Contract:
 Definitions:
 - Sales for the day:
   Prefer completed_at in [start, end), else fallback to created_at.
-- Refund totals for the day:
-  Uses SaleRefundAudit.refunded_at in [start, end).
-  Partial refunds are supported best-effort via common amount fields if present;
-  otherwise falls back to original_total_amount.
+
+Refund reporting (CRITICAL):
+- Partial refunds are recorded as SaleItemRefund rows (append-only).
+- Full refunds are recorded as SaleRefundAudit (one-time).
+- Reports MUST include BOTH, without double-counting.
+
+Rule:
+- Refund EVENTS for the day:
+  - Partial refunds: SaleItemRefund.refunded_at in [start, end)
+  - Full refunds: SaleRefundAudit.refunded_at in [start, end)
+    BUT exclude audits for sales that have SaleItemRefund history
+    (prevents double-counting and avoids auto-finalize attribution errors)
 
 Security:
 - Admin-only
@@ -42,6 +50,11 @@ try:
     from sales.models.sale_payment_allocation import SalePaymentAllocation
 except Exception:
     SalePaymentAllocation = None
+
+try:
+    from sales.models.sale_item_refund import SaleItemRefund
+except Exception:
+    SaleItemRefund = None
 
 
 class _AdminOnly(IsAuthenticated):
@@ -98,6 +111,23 @@ def _refund_amount_from_audit(audit: SaleRefundAudit) -> float:
     return _sum_money(getattr(audit, "original_total_amount", 0))
 
 
+def _refund_amount_from_item_refund(row) -> float:
+    """
+    SaleItemRefund provides an authoritative computed line total:
+      line_total_refund_amount = unit_price_snapshot * quantity_refunded
+    """
+    if hasattr(row, "line_total_refund_amount"):
+        return _sum_money(row.line_total_refund_amount)
+
+    # Fallback (should not happen in your codebase)
+    qty = getattr(row, "quantity_refunded", 0) or 0
+    unit_price = getattr(row, "unit_price_snapshot", 0) or 0
+    try:
+        return float(unit_price) * float(int(qty))
+    except Exception:
+        return 0.0
+
+
 def _sales_for_day(day: date_cls):
     start, end = _date_bounds(day)
 
@@ -107,6 +137,56 @@ def _sales_for_day(day: date_cls):
         qs = Sale.objects.filter(created_at__gte=start, created_at__lt=end)
 
     return qs, start, end
+
+
+def _refunds_for_day(*, start, end):
+    """
+    Returns (refund_count, refund_total_amount) for the day.
+
+    Includes:
+    - Partial refunds from SaleItemRefund (refunded_at in day)
+    - Full refunds from SaleRefundAudit (refunded_at in day),
+      excluding audits for sales that have SaleItemRefund history.
+    """
+    refund_count = 0
+    refund_total = 0.0
+
+    # -----------------------------
+    # 1) PARTIAL REFUNDS (item rows)
+    # -----------------------------
+    sales_with_item_refunds = set()
+
+    if SaleItemRefund is not None:
+        item_qs = SaleItemRefund.objects.filter(
+            refunded_at__gte=start, refunded_at__lt=end
+        )
+
+        item_count = item_qs.count()
+        item_total = sum(_refund_amount_from_item_refund(r) for r in item_qs.iterator())
+
+        refund_count += item_count
+        refund_total += item_total
+
+        # Used to exclude audits that represent auto-finalization (avoid double count)
+        sales_with_item_refunds = set(
+            SaleItemRefund.objects.values_list("sale_id", flat=True).distinct()
+        )
+
+    # -----------------------------
+    # 2) FULL REFUNDS (audit rows)
+    # -----------------------------
+    audit_qs = SaleRefundAudit.objects.filter(refunded_at__gte=start, refunded_at__lt=end)
+
+    if sales_with_item_refunds:
+        audit_qs = audit_qs.exclude(sale_id__in=list(sales_with_item_refunds))
+
+    audit_count = audit_qs.count()
+    audit_total = sum(_refund_amount_from_audit(a) for a in audit_qs.iterator())
+
+    refund_count += audit_count
+    refund_total += audit_total
+
+    return refund_count, refund_total
 
 
 class DailySalesReportView(APIView):
@@ -121,11 +201,7 @@ class DailySalesReportView(APIView):
             total_amount=Sum("total_amount"),
         )
 
-        refunds_qs = SaleRefundAudit.objects.filter(
-            refunded_at__gte=start, refunded_at__lt=end
-        )
-        refund_count = refunds_qs.count()
-        refund_total = sum(_refund_amount_from_audit(a) for a in refunds_qs.iterator())
+        refund_count, refund_total = _refunds_for_day(start=start, end=end)
 
         by_payment_method = list(
             sales_qs.values("payment_method")
@@ -270,10 +346,7 @@ class ZReportView(APIView):
             gross_total_amount=Sum("total_amount"),
         )
 
-        refunds_qs = SaleRefundAudit.objects.filter(
-            refunded_at__gte=start, refunded_at__lt=end
-        )
-        refund_total = sum(_refund_amount_from_audit(a) for a in refunds_qs.iterator())
+        refund_count, refund_total = _refunds_for_day(start=start, end=end)
 
         payload = {
             "date": day.isoformat(),
@@ -281,6 +354,7 @@ class ZReportView(APIView):
             "z_report": {
                 "transaction_count": gross.get("transaction_count") or 0,
                 "gross_total_amount": _sum_money(gross.get("gross_total_amount")),
+                "refund_count": refund_count,
                 "refund_total_amount": _sum_money(refund_total),
                 "net_total_amount": _sum_money(gross.get("gross_total_amount"))
                 - _sum_money(refund_total),
