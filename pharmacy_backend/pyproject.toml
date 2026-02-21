@@ -8,7 +8,7 @@ select = ["E", "F", "I"]
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["backend","pos","products","sales","purchases","users","store","public","accounting"]
+known-first-party = ["backend", "pos", "products", "sales", "purchases", "users", "store", "public", "accounting"]
 combine-as-imports = true
 
 [tool.poetry]
@@ -16,3 +16,4 @@ name = "pharmacy-backend"
 version = "0.1.0"
 description = "Multi-business retail ERP backend"
 authors = ["DocMe <me@tisdocme.com>"]
+package-mode = false
