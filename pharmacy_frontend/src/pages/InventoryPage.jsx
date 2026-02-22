@@ -1,5 +1,4 @@
 // src/pages/InventoryPage.jsx
-// src/pages/InventoryPage.jsx
 
 /**
  * ======================================================
@@ -11,6 +10,12 @@
  * Fix:
  * - ✅ React Hooks order bug fixed (minified error #310 / "Rendered more hooks..."):
  *   All hooks are now called unconditionally before any conditional return.
+ *
+ * Upgrade (Category inline create):
+ * - ✅ Add "New category" inline input + Create button inside Add Product modal
+ * - ✅ Uses createCategory() API
+ * - ✅ Refreshes categories + auto-selects newly created category
+ * - ✅ Respects backend permissions (admin-only by default; shows error if forbidden)
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -23,6 +28,7 @@ import {
   createProduct,
   intakeStockBatch,
   resolveStoreId,
+  createCategory,
 } from "../features/pos/pos.api";
 
 import { fetchExpiringSoon } from "../features/inventory/inventory.api";
@@ -138,8 +144,7 @@ function SortSelect({ value, onChange }) {
 
 function sortProducts(items, sortKey) {
   const arr = [...items];
-  const byStr = (a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: "base" });
+  const byStr = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
   const byNum = (a, b) => (a ?? 0) - (b ?? 0);
 
   switch (sortKey) {
@@ -275,6 +280,11 @@ export default function InventoryPage() {
     is_active: true,
   });
 
+  // Category inline-create state
+  const [catName, setCatName] = useState("");
+  const [catSaving, setCatSaving] = useState(false);
+  const [catErr, setCatErr] = useState("");
+
   // Stock Intake UI state
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [intakeErr, setIntakeErr] = useState("");
@@ -400,6 +410,9 @@ export default function InventoryPage() {
 
   const openAdd = () => {
     setAddErr("");
+    setCatErr("");
+    setCatName("");
+    setCatSaving(false);
     setForm({
       sku: "",
       name: "",
@@ -412,9 +425,11 @@ export default function InventoryPage() {
   };
 
   const closeAdd = () => {
-    if (saving) return;
+    if (saving || catSaving) return;
     setAddOpen(false);
     setAddErr("");
+    setCatErr("");
+    setCatName("");
   };
 
   const onChange = (patch) => setForm((prev) => ({ ...prev, ...patch }));
@@ -466,6 +481,39 @@ export default function InventoryPage() {
       setAddErr(e?.message || "Failed to create product.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // -----------------------------
+  // Category inline create (admin only by default)
+  // -----------------------------
+  const submitNewCategory = async () => {
+    setCatErr("");
+    const name = String(catName || "").trim();
+    if (!name) return setCatErr("Enter a category name.");
+
+    try {
+      setCatSaving(true);
+      const created = await createCategory({ name });
+
+      // Refresh list, then select it
+      await refetchCategories();
+      const newId = created?.id ? String(created.id) : "";
+
+      if (newId) {
+        onChange({ category: newId });
+      } else {
+        // fallback: try to match by name after refetch
+        const lower = name.toLowerCase();
+        const match = categories.find((c) => String(c.name || "").toLowerCase() === lower);
+        if (match?.id) onChange({ category: String(match.id) });
+      }
+
+      setCatName("");
+    } catch (e) {
+      setCatErr(e?.message || "Failed to create category.");
+    } finally {
+      setCatSaving(false);
     }
   };
 
@@ -592,8 +640,7 @@ export default function InventoryPage() {
             Products, prices, and live stock from active (non-expired) batches.
           </p>
           <p className="text-xs text-gray-500 mt-1">
-            Active store:{" "}
-            <span className="font-semibold">{activeStoreId}</span>
+            Active store: <span className="font-semibold">{activeStoreId}</span>
           </p>
         </div>
 
@@ -767,10 +814,7 @@ export default function InventoryPage() {
                 <div className="mt-2 text-sm text-gray-800">
                   Stock: <span className="font-semibold">{p.stock}</span>
                   {p.threshold !== null ? (
-                    <span className="text-gray-600">
-                      {" "}
-                      / Thresh: {p.threshold}
-                    </span>
+                    <span className="text-gray-600"> / Thresh: {p.threshold}</span>
                   ) : null}
                 </div>
 
@@ -930,7 +974,7 @@ export default function InventoryPage() {
         open={addOpen}
         title="Add Product"
         onClose={() => {
-          if (saving) return;
+          if (saving || catSaving) return;
           closeAdd();
         }}
       >
@@ -984,9 +1028,7 @@ export default function InventoryPage() {
               </label>
               <input
                 value={form.low_stock_threshold}
-                onChange={(e) =>
-                  onChange({ low_stock_threshold: e.target.value })
-                }
+                onChange={(e) => onChange({ low_stock_threshold: e.target.value })}
                 className="h-10 w-full rounded-lg border px-3 text-sm"
                 inputMode="numeric"
                 placeholder="e.g. 10"
@@ -997,6 +1039,7 @@ export default function InventoryPage() {
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Category
               </label>
+
               <div className="flex gap-2">
                 <select
                   value={form.category}
@@ -1015,18 +1058,48 @@ export default function InventoryPage() {
                   type="button"
                   className="h-10 rounded-lg border px-3 text-sm hover:bg-gray-50"
                   onClick={() => refetchCategories()}
-                  disabled={categoriesLoading}
+                  disabled={categoriesLoading || catSaving}
                   title="Reload categories"
                 >
                   {categoriesLoading ? "…" : "↻"}
                 </button>
               </div>
 
+              {/* Inline create */}
+              <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                <input
+                  value={catName}
+                  onChange={(e) => setCatName(e.target.value)}
+                  className="h-10 w-full rounded-lg border px-3 text-sm"
+                  placeholder="New category name (admin only)"
+                  disabled={catSaving}
+                />
+
+                <button
+                  type="button"
+                  className="h-10 rounded-lg bg-gray-900 text-white px-4 text-sm hover:bg-gray-800 disabled:opacity-50"
+                  onClick={submitNewCategory}
+                  disabled={catSaving || !String(catName || "").trim()}
+                  title="Create category"
+                >
+                  {catSaving ? "Creating…" : "+ Add"}
+                </button>
+              </div>
+
+              {catErr && (
+                <div className="mt-2 text-xs text-red-700">{catErr}</div>
+              )}
+
               {categoriesError && (
                 <div className="mt-2 text-xs text-red-700">
                   {getErrorMessage(categoriesErrObj, "Failed to load categories.")}
                 </div>
               )}
+
+              <div className="mt-1 text-[11px] text-gray-500">
+                Note: Creating categories may require admin permission. If you get 403,
+                ask an admin to create it or enable allowed groups on the backend.
+              </div>
             </div>
 
             <div className="md:col-span-2 flex items-center gap-2">
@@ -1053,7 +1126,7 @@ export default function InventoryPage() {
               type="button"
               className="px-4 py-2 rounded border hover:bg-gray-50 disabled:opacity-50"
               onClick={closeAdd}
-              disabled={saving}
+              disabled={saving || catSaving}
             >
               Cancel
             </button>
@@ -1061,7 +1134,7 @@ export default function InventoryPage() {
               type="button"
               className="px-5 py-2 rounded bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
               onClick={submitAdd}
-              disabled={saving}
+              disabled={saving || catSaving}
             >
               {saving ? "Saving…" : "Create Product"}
             </button>
@@ -1156,9 +1229,7 @@ export default function InventoryPage() {
               </label>
               <input
                 value={intakeForm.batch_number}
-                onChange={(e) =>
-                  onIntakeChange({ batch_number: e.target.value })
-                }
+                onChange={(e) => onIntakeChange({ batch_number: e.target.value })}
                 className="h-10 w-full rounded-lg border px-3 text-sm"
                 placeholder="Leave blank to auto-generate"
               />
