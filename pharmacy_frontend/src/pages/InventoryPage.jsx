@@ -12,6 +12,7 @@
  * - Search + filter + sort
  * - Low-stock panel
  * - ✅ Add Product (store-scoped)
+ * - ✅ Add Category inline (during product creation)
  * - ✅ Stock Intake (purchase-led StockBatch create)
  * - ✅ Expiry Alerts (UX): summary panel + quick link
  *
@@ -33,6 +34,7 @@ import {
   fetchCategories,
   fetchProducts,
   createProduct,
+  createCategory,
   intakeStockBatch,
   resolveStoreId,
 } from "../features/pos/pos.api";
@@ -250,10 +252,8 @@ function normalizeExpiring(data) {
 export default function InventoryPage() {
   const navigate = useNavigate();
 
-  // IMPORTANT: store id must be reactive (store selector lives in layout)
   const [activeStoreId, setActiveStoreId] = useState(() => resolveStoreId());
 
-  // Listen to "active-store-changed" broadcast from layout StoreSelector
   useEffect(() => {
     const handler = (evt) => {
       const storeId = String(evt?.detail?.storeId || "").trim() || null;
@@ -261,8 +261,6 @@ export default function InventoryPage() {
     };
 
     window.addEventListener("active-store-changed", handler);
-
-    // Also sync once on mount in case localStorage changed before page mounted
     setActiveStoreId(resolveStoreId());
 
     return () => window.removeEventListener("active-store-changed", handler);
@@ -277,6 +275,11 @@ export default function InventoryPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [addErr, setAddErr] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Inline Category create UI state
+  const [catName, setCatName] = useState("");
+  const [catSaving, setCatSaving] = useState(false);
+  const [catErr, setCatErr] = useState("");
 
   const [form, setForm] = useState({
     sku: "",
@@ -335,7 +338,6 @@ export default function InventoryPage() {
     enabled: addOpen,
   });
 
-  // ✅ Expiry alerts summary (quick preview)
   const EXPIRY_DAYS = 30;
 
   const expiryQuery = useQuery({
@@ -348,10 +350,12 @@ export default function InventoryPage() {
 
   const categories = useMemo(() => {
     const raw = Array.isArray(categoriesData) ? categoriesData : [];
-    return raw.map((c) => ({
-      id: c.id,
-      name: c.name ?? "—",
-    }));
+    return raw
+      .map((c) => ({
+        id: c.id,
+        name: c.name ?? "—",
+      }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   }, [categoriesData]);
 
   const products = useMemo(
@@ -388,25 +392,10 @@ export default function InventoryPage() {
     return sortProducts(list, sortKey);
   }, [products, query, onlyActive, onlyLowStock, sortKey]);
 
-  // ✅ Expiry preview (derived values)
-  const expRows = useMemo(() => normalizeExpiring(expiryQuery.data), [expiryQuery.data]);
-  const expCount = expRows.length;
-
-  const expTop = useMemo(() => {
-    return [...expRows]
-      .sort((a, b) => {
-        const da = daysLeft(a.expiryDate);
-        const db = daysLeft(b.expiryDate);
-        const na = da === null ? Number.POSITIVE_INFINITY : da;
-        const nb = db === null ? Number.POSITIVE_INFINITY : db;
-        if (na !== nb) return na - nb;
-        return String(a.expiryDate || "").localeCompare(String(b.expiryDate || ""));
-      })
-      .slice(0, 6);
-  }, [expRows]);
-
   const openAdd = () => {
     setAddErr("");
+    setCatErr("");
+    setCatName("");
     setForm({
       sku: "",
       name: "",
@@ -419,9 +408,11 @@ export default function InventoryPage() {
   };
 
   const closeAdd = () => {
-    if (saving) return;
+    if (saving || catSaving) return;
     setAddOpen(false);
     setAddErr("");
+    setCatErr("");
+    setCatName("");
   };
 
   const onChange = (patch) => setForm((prev) => ({ ...prev, ...patch }));
@@ -473,6 +464,36 @@ export default function InventoryPage() {
       setAddErr(e?.message || "Failed to create product.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const createNewCategory = async () => {
+    setCatErr("");
+    const name = String(catName || "").trim();
+    if (!name) return setCatErr("Enter a category name first.");
+
+    try {
+      setCatSaving(true);
+      const created = await createCategory({ name });
+
+      // Refresh list and auto-select created
+      const refreshed = await refetchCategories();
+      const createdId = created?.id;
+
+      if (createdId) {
+        onChange({ category: String(createdId) });
+      } else {
+        // fallback: try to match by name in refreshed list
+        const list = Array.isArray(refreshed?.data) ? refreshed.data : [];
+        const match = list.find((c) => String(c?.name || "").toLowerCase() === name.toLowerCase());
+        if (match?.id) onChange({ category: String(match.id) });
+      }
+
+      setCatName("");
+    } catch (e) {
+      setCatErr(e?.message || "Failed to create category.");
+    } finally {
+      setCatSaving(false);
     }
   };
 
@@ -552,7 +573,7 @@ export default function InventoryPage() {
   };
 
   // --------------------------------------
-  // Render guards (AFTER all hooks)
+  // Render guards
   // --------------------------------------
   if (!activeStoreId) {
     return (
@@ -588,6 +609,23 @@ export default function InventoryPage() {
       </div>
     );
   }
+
+  // Expiry preview computed (NO hooks after this point)
+  const expRows = normalizeExpiring(expiryQuery.data);
+  const expCount = expRows.length;
+
+  const expTop = useMemo(() => {
+    return [...expRows]
+      .sort((a, b) => {
+        const da = daysLeft(a.expiryDate);
+        const db = daysLeft(b.expiryDate);
+        const na = da === null ? Number.POSITIVE_INFINITY : da;
+        const nb = db === null ? Number.POSITIVE_INFINITY : db;
+        if (na !== nb) return na - nb;
+        return String(a.expiryDate || "").localeCompare(String(b.expiryDate || ""));
+      })
+      .slice(0, 6);
+  }, [expiryQuery.data]); // eslint safe: data drives this
 
   return (
     <div className="p-4 space-y-4">
@@ -699,7 +737,9 @@ export default function InventoryPage() {
             )}
           </div>
         ) : expiryQuery.isLoading ? (
-          <div className="mt-3 text-sm text-gray-600">Loading expiry alerts…</div>
+          <div className="mt-3 text-sm text-gray-600">
+            Loading expiry alerts…
+          </div>
         ) : expTop.length === 0 ? (
           <div className="mt-3 text-sm text-gray-600">
             No active batches expiring within {EXPIRY_DAYS} day(s).
@@ -774,7 +814,10 @@ export default function InventoryPage() {
                 <div className="mt-2 text-sm text-gray-800">
                   Stock: <span className="font-semibold">{p.stock}</span>
                   {p.threshold !== null ? (
-                    <span className="text-gray-600"> / Thresh: {p.threshold}</span>
+                    <span className="text-gray-600">
+                      {" "}
+                      / Thresh: {p.threshold}
+                    </span>
                   ) : null}
                 </div>
 
@@ -835,7 +878,9 @@ export default function InventoryPage() {
 
         <div className="mt-3 text-xs text-gray-600">
           Showing{" "}
-          <span className="font-semibold text-gray-900">{filtered.length}</span>{" "}
+          <span className="font-semibold text-gray-900">
+            {filtered.length}
+          </span>{" "}
           result(s)
         </div>
       </div>
@@ -934,15 +979,65 @@ export default function InventoryPage() {
         open={addOpen}
         title="Add Product"
         onClose={() => {
-          if (saving) return;
+          if (saving || catSaving) return;
           closeAdd();
         }}
       >
-        {/* unchanged modal content */}
         <div className="space-y-4">
           <div className="text-xs text-gray-600">
             Store scope:{" "}
             <span className="font-semibold text-gray-900">{activeStoreId}</span>
+          </div>
+
+          {/* ✅ Inline Category Create */}
+          <div className="rounded-lg border bg-gray-50 p-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-sm font-semibold text-gray-900">
+                  Categories
+                </div>
+                <div className="text-xs text-gray-600">
+                  Create a new category here, then select it below.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="h-9 rounded-lg border px-3 text-xs hover:bg-white disabled:opacity-50"
+                onClick={() => refetchCategories()}
+                disabled={categoriesLoading || catSaving}
+                title="Reload categories"
+              >
+                {categoriesLoading ? "Reloading…" : "Reload"}
+              </button>
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <input
+                value={catName}
+                onChange={(e) => setCatName(e.target.value)}
+                className="h-10 w-full rounded-lg border px-3 text-sm"
+                placeholder="New category name (e.g. Analgesics)"
+              />
+              <button
+                type="button"
+                className="h-10 rounded-lg bg-gray-900 text-white px-3 text-sm hover:bg-gray-800 disabled:opacity-50"
+                onClick={createNewCategory}
+                disabled={catSaving || !String(catName || "").trim()}
+                title="Create category"
+              >
+                {catSaving ? "Creating…" : "+ Add"}
+              </button>
+            </div>
+
+            {catErr && (
+              <div className="mt-2 text-xs text-red-700">{catErr}</div>
+            )}
+            {categoriesError && (
+              <div className="mt-2 text-xs text-red-700">
+                {getErrorMessage(categoriesErrObj, "Failed to load categories.")}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1002,39 +1097,21 @@ export default function InventoryPage() {
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Category
               </label>
-              <div className="flex gap-2">
-                <select
-                  value={form.category}
-                  onChange={(e) => onChange({ category: e.target.value })}
-                  className="h-10 w-full rounded-lg border bg-white px-3 text-sm"
-                >
-                  <option value="">— None —</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  type="button"
-                  className="h-10 rounded-lg border px-3 text-sm hover:bg-gray-50"
-                  onClick={() => refetchCategories()}
-                  disabled={categoriesLoading}
-                  title="Reload categories"
-                >
-                  {categoriesLoading ? "…" : "↻"}
-                </button>
+              <select
+                value={form.category}
+                onChange={(e) => onChange({ category: e.target.value })}
+                className="h-10 w-full rounded-lg border bg-white px-3 text-sm"
+              >
+                <option value="">— None —</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-1 text-xs text-gray-500">
+                Tip: use “+ Add” above to create a category quickly.
               </div>
-
-              {categoriesError && (
-                <div className="mt-2 text-xs text-red-700">
-                  {getErrorMessage(
-                    categoriesErrObj,
-                    "Failed to load categories."
-                  )}
-                </div>
-              )}
             </div>
 
             <div className="md:col-span-2 flex items-center gap-2">
@@ -1061,7 +1138,7 @@ export default function InventoryPage() {
               type="button"
               className="px-4 py-2 rounded border hover:bg-gray-50 disabled:opacity-50"
               onClick={closeAdd}
-              disabled={saving}
+              disabled={saving || catSaving}
             >
               Cancel
             </button>
@@ -1069,7 +1146,7 @@ export default function InventoryPage() {
               type="button"
               className="px-5 py-2 rounded bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
               onClick={submitAdd}
-              disabled={saving}
+              disabled={saving || catSaving}
             >
               {saving ? "Saving…" : "Create Product"}
             </button>
@@ -1091,7 +1168,6 @@ export default function InventoryPage() {
           closeIntake();
         }}
       >
-        {/* unchanged modal content */}
         <div className="space-y-4">
           <div className="text-xs text-gray-600">
             Store scope:{" "}
@@ -1105,7 +1181,9 @@ export default function InventoryPage() {
               </label>
               <select
                 value={intakeForm.product_id}
-                onChange={(e) => onIntakeChange({ product_id: e.target.value })}
+                onChange={(e) =>
+                  onIntakeChange({ product_id: e.target.value })
+                }
                 className="h-10 w-full rounded-lg border bg-white px-3 text-sm"
               >
                 <option value="">— Select product —</option>
@@ -1155,7 +1233,9 @@ export default function InventoryPage() {
               <input
                 type="date"
                 value={intakeForm.expiry_date}
-                onChange={(e) => onIntakeChange({ expiry_date: e.target.value })}
+                onChange={(e) =>
+                  onIntakeChange({ expiry_date: e.target.value })
+                }
                 className="h-10 w-full rounded-lg border px-3 text-sm"
               />
             </div>

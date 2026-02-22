@@ -1,4 +1,3 @@
-// src/features/pos/pos.api.js
 /**
  * ======================================================
  * PATH: src/features/pos/pos.api.js
@@ -206,22 +205,18 @@ export async function fetchCategories() {
   }
 }
 
-export async function createCategory(payload = {}) {
+export async function createCategory({ name } = {}) {
   try {
-    if (!payload || typeof payload !== "object") {
-      throw new Error("Invalid category payload.");
-    }
+    const n = String(name || "").trim();
+    if (!n) throw new Error("Category name is required.");
 
-    const name = String(payload.name || "").trim();
-    if (!name) throw new Error("name is required.");
-
-    const res = await axiosClient.post("/products/categories/", { name });
+    const res = await axiosClient.post("/products/categories/", { name: n });
 
     if (!res.data || typeof res.data !== "object") {
       throw new Error("Categories API: Invalid create response");
     }
 
-    return res.data;
+    return res.data; // expects {id, name, ...}
   } catch (err) {
     throw new Error(extractErrorMessage(err, "Failed to create category."));
   }
@@ -311,7 +306,6 @@ export async function createProduct(payload = {}, { storeId } = {}) {
 // ======================================================
 
 export async function intakeStockBatch({
-  storeId,
   productId,
   quantity_received,
   unit_cost,
@@ -319,8 +313,6 @@ export async function intakeStockBatch({
   batch_number,
 } = {}) {
   try {
-    const sid = resolveStoreId(storeId);
-
     const pid = String(productId || "").trim();
     if (!pid) throw new Error("productId is required.");
 
@@ -335,13 +327,8 @@ export async function intakeStockBatch({
     const exp = String(expiry_date || "").trim();
     if (!exp) throw new Error("expiry_date is required (YYYY-MM-DD).");
 
-    // IMPORTANT:
-    // - Backend StockBatchViewSet.get_queryset() filters by store_id on StockBatch.
-    // - Stock intake service requires store_id (resolved from product.store if omitted),
-    //   but passing store_id from UI avoids ambiguity and keeps multi-store strict.
     const payload = {
       product_id: pid,
-      ...(sid ? { store_id: sid } : {}),
       quantity_received: Math.floor(qty),
       unit_cost: String(cost.toFixed(2)),
       expiry_date: exp,
@@ -362,11 +349,7 @@ export async function intakeStockBatch({
   }
 }
 
-export async function fetchStockBatches({
-  storeId,
-  productId,
-  include_inactive,
-} = {}) {
+export async function fetchStockBatches({ storeId, productId, include_inactive } = {}) {
   try {
     const sid = resolveStoreId(storeId);
 
@@ -568,7 +551,6 @@ export async function checkoutCart({
       ...(hasAllocations ? { payment_allocations: allocations } : {}),
     };
 
-    // If caller explicitly set split, require allocations
     if (String(payment_method || "").toLowerCase() === "split" && !hasAllocations) {
       throw new Error("payment_allocations are required for split payment.");
     }
