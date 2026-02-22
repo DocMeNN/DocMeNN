@@ -1,6 +1,5 @@
 # accounting/services/financial_statement_service.py
 
-# accounting/services/financial_statement_service.py
 
 """
 FINANCIAL STATEMENT SERVICE (AUTHORITATIVE)

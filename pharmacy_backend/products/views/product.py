@@ -1,4 +1,5 @@
 # products/views/product.py
+
 """
 PRODUCT VIEWSET
 
@@ -173,7 +174,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 type=str,
                 location=OpenApiParameter.QUERY,
                 required=False,
-                description="Optional search query (name, sku, barcode).",
+                description="Optional search query (name, sku, barcode if present).",
             ),
         ],
         responses={
@@ -194,13 +195,6 @@ class ProductViewSet(viewsets.ModelViewSet):
     def public(self, request):
         """
         GET /api/products/products/public/?store_id=<uuid>&q=<text>
-
-        Rules:
-        - AllowAny
-        - returns ONLY active products
-        - store-scoped view (store_id required for V1)
-        - supports basic search (name, sku, barcode)
-        - still uses backend-truth total_stock annotation via get_queryset()
         """
         store_id = (request.query_params.get("store_id") or "").strip()
         if not store_id:
@@ -214,14 +208,14 @@ class ProductViewSet(viewsets.ModelViewSet):
         qs = self.get_queryset().filter(is_active=True)
 
         if q:
-            qs = qs.filter(
-                Q(name__icontains=q) | Q(sku__icontains=q) | Q(barcode__icontains=q)
-            )
+            # barcode may not exist on Product; keep safe
+            filter_q = Q(name__icontains=q) | Q(sku__icontains=q)
+            if hasattr(Product, "barcode"):
+                filter_q = filter_q | Q(barcode__icontains=q)
+            qs = qs.filter(filter_q)
 
         data = self.get_serializer(qs, many=True).data
-        return Response(
-            {"count": len(data), "results": data}, status=status.HTTP_200_OK
-        )
+        return Response({"count": len(data), "results": data}, status=status.HTTP_200_OK)
 
     # -----------------------------
     # Admin-only delete (safe)
@@ -254,11 +248,8 @@ class ProductViewSet(viewsets.ModelViewSet):
 
         include_inactive = (
             request.query_params.get("include_inactive") or ""
-        ).strip().lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+        ).strip().lower() in ("1", "true", "yes")
+
         if not include_inactive:
             qs = qs.filter(is_active=True)
 
@@ -285,7 +276,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     # Alerts: Expiring soon (product-level)
     # -----------------------------
     @action(detail=False, methods=["get"], url_path="alerts/expiring-soon")
-    def expiring_so_on(self, request):
+    def expiring_soon(self, request):
         """
         GET /products/products/alerts/expiring-soon/?days=30&store_id=<uuid>
 

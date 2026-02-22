@@ -1,3 +1,4 @@
+# products/serializers/stock_batch.py
 """
 ======================================================
 PATH: products/serializers/stock_batch.py
@@ -9,10 +10,10 @@ Purpose:
 - Keep quantity mutations service-managed.
 - Enforce purchase-led intake rules (unit_cost required on create).
 
-Key Fix (Bug):
+Key Fix (Frontend Compatibility):
+- Accepts BOTH "product_id" and "productId" on POST.
 - batch_number is OPTIONAL on POST.
-- If missing/blank -> normalize to None so intake_stock() auto-generates.
-- This prevents serializer-level "field required" rejection.
+  If missing/blank -> normalize to None so intake_stock() auto-generates.
 
 IMPORTANT (AUDIT + BEST PRACTICE):
 - unit_cost is NEVER PATCH-able via API.
@@ -41,7 +42,11 @@ class StockBatchSerializer(serializers.ModelSerializer):
         help_text="Supplier / delivery batch reference (optional; auto-generated if missing).",
     )
 
-    product_id = serializers.UUIDField(write_only=True, required=True)
+    # Canonical input (backend)
+    product_id = serializers.UUIDField(write_only=True, required=False)
+    # Frontend alias (React commonly sends productId)
+    productId = serializers.UUIDField(write_only=True, required=False)
+
     product = serializers.CharField(source="product.name", read_only=True)
     product_uuid = serializers.UUIDField(source="product.id", read_only=True)
 
@@ -59,6 +64,7 @@ class StockBatchSerializer(serializers.ModelSerializer):
             "product",
             "product_uuid",
             "product_id",
+            "productId",
             "batch_number",
             "expiry_date",
             "quantity_received",
@@ -84,9 +90,7 @@ class StockBatchSerializer(serializers.ModelSerializer):
         except Exception:
             raise serializers.ValidationError("quantity_received must be an integer")
         if v <= 0:
-            raise serializers.ValidationError(
-                "quantity_received must be greater than zero"
-            )
+            raise serializers.ValidationError("quantity_received must be greater than zero")
         return v
 
     def validate_expiry_date(self, value):
@@ -117,6 +121,21 @@ class StockBatchSerializer(serializers.ModelSerializer):
         bn = str(raw).strip()
         return bn or None
 
+    def _resolve_product_id(self, attrs) -> object | None:
+        """
+        Accept both:
+        - product_id (canonical)
+        - productId (frontend alias)
+        """
+        pid = attrs.get("product_id", None)
+        if pid:
+            return pid
+        pid2 = attrs.get("productId", None)
+        if pid2:
+            attrs["product_id"] = pid2
+            return pid2
+        return None
+
     def validate(self, attrs):
         is_update = self.instance is not None
 
@@ -128,6 +147,7 @@ class StockBatchSerializer(serializers.ModelSerializer):
                 "is_active",
                 "product",
                 "product_id",
+                "productId",
                 "unit_cost",  # locked via API
             }
             incoming = set(attrs.keys())
@@ -135,7 +155,10 @@ class StockBatchSerializer(serializers.ModelSerializer):
             if bad:
                 raise serializers.ValidationError(
                     {
-                        "detail": f"Field(s) {bad} cannot be edited directly. Use actions/services for controlled ops."
+                        "detail": (
+                            f"Field(s) {bad} cannot be edited directly. "
+                            "Use actions/services for controlled ops."
+                        )
                     }
                 )
 
@@ -150,10 +173,13 @@ class StockBatchSerializer(serializers.ModelSerializer):
             return attrs
 
         # POST rules
+        # product_id required (but allow alias productId)
+        product_id = self._resolve_product_id(attrs)
+        if not product_id:
+            raise serializers.ValidationError({"product_id": "product_id is required"})
+
         # batch_number optional: normalize to None so service generates it
-        attrs["batch_number"] = self._normalize_batch_number(
-            attrs.get("batch_number", None)
-        )
+        attrs["batch_number"] = self._normalize_batch_number(attrs.get("batch_number", None))
 
         unit_cost = self._coerce_unit_cost(attrs.get("unit_cost"))
         if unit_cost is None:
@@ -174,8 +200,10 @@ class StockBatchSerializer(serializers.ModelSerializer):
         - ViewSet.create() uses intake_stock() as the canonical create path.
         - This create() remains safe if used anywhere else accidentally.
         """
-        product_id = validated_data.pop("product_id")
+        # Support alias field if it somehow survived validation
+        validated_data.pop("productId", None)
 
+        product_id = validated_data.pop("product_id")
         try:
             product = Product.objects.get(id=product_id, is_active=True)
         except Product.DoesNotExist:
@@ -191,6 +219,9 @@ class StockBatchSerializer(serializers.ModelSerializer):
         return batch
 
     def update(self, instance, validated_data):
+        # Alias not applicable on PATCH
+        validated_data.pop("productId", None)
+
         if "batch_number" in validated_data:
             instance.batch_number = (validated_data["batch_number"] or "").strip()
 

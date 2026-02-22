@@ -70,8 +70,9 @@ class ProductSerializer(serializers.ModelSerializer):
         return value
 
     def validate_unit_price(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("Unit price must be greater than zero")
+        # Keep consistent with Product.clean(): non-negative (0 allowed)
+        if value is None or value < 0:
+            raise serializers.ValidationError("Unit price must be non-negative")
         return value
 
     # -----------------------------
@@ -176,10 +177,13 @@ class ProductSerializer(serializers.ModelSerializer):
         category_id = validated_data.pop("category", None)
 
         if category_id is not None:
-            try:
-                instance.category = Category.objects.get(id=category_id)
-            except Category.DoesNotExist:
-                raise serializers.ValidationError({"category": "Invalid category ID"})
+            if category_id == "" or category_id is None:
+                instance.category = None
+            else:
+                try:
+                    instance.category = Category.objects.get(id=category_id)
+                except Category.DoesNotExist:
+                    raise serializers.ValidationError({"category": "Invalid category ID"})
 
         return super().update(instance, validated_data)
 

@@ -1,3 +1,4 @@
+# products/views/stock_batch.py
 """
 ======================================================
 PATH: products/views/stock_batch.py
@@ -129,7 +130,8 @@ class StockBatchViewSet(viewsets.ModelViewSet):
         product_id = v.get("product_id", None)
         if not product_id:
             return Response(
-                {"detail": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
+                {"detail": "product_id is required"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
@@ -142,10 +144,20 @@ class StockBatchViewSet(viewsets.ModelViewSet):
             )
 
         # Optional explicit store override (frontend can pass store_id)
-        # If omitted, intake_stock will resolve from product.store.
+        # If omitted, resolve from product.store (canonical).
         store_id = (request.data.get("store_id") or "").strip() or getattr(
             product, "store_id", None
         )
+        if not store_id:
+            return Response(
+                {
+                    "detail": (
+                        "store_id is required for stock intake. "
+                        "Either pass store_id in request or ensure product.store is set."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             batch = intake_stock(
@@ -153,11 +165,9 @@ class StockBatchViewSet(viewsets.ModelViewSet):
                 quantity_received=v.get("quantity_received"),
                 unit_cost=v.get("unit_cost"),
                 expiry_date=v.get("expiry_date"),
-                batch_number=v.get(
-                    "batch_number"
-                ),  # may be None; service will generate
+                batch_number=v.get("batch_number"),  # may be None; service will generate
                 user=request.user,
-                store=store_id,
+                store=store_id,  # service may accept store id or instance (best-effort)
                 update_product_price=False,
             )
         except Exception as exc:
@@ -341,14 +351,10 @@ class StockBatchViewSet(viewsets.ModelViewSet):
                     "movement_type": m.movement_type,
                     "reason": m.reason,
                     "quantity": int(m.quantity or 0),
-                    "unit_cost_snapshot": str(
-                        getattr(m, "unit_cost_snapshot", "") or ""
-                    ),
+                    "unit_cost_snapshot": str(getattr(m, "unit_cost_snapshot", "") or ""),
                     "total_cost": str(getattr(m, "total_cost", "") or ""),
                     "sale_id": str(m.sale_id) if m.sale_id else None,
-                    "performed_by": str(m.performed_by_id)
-                    if m.performed_by_id
-                    else None,
+                    "performed_by": str(m.performed_by_id) if m.performed_by_id else None,
                 }
             )
 

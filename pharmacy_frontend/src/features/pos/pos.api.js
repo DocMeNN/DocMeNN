@@ -1,3 +1,4 @@
+// src/features/pos/pos.api.js
 /**
  * ======================================================
  * PATH: src/features/pos/pos.api.js
@@ -12,6 +13,7 @@
  * - GET  /products/products/ (store_id optional but recommended)
  * - POST /products/products/ (create product)
  * - GET  /products/categories/ (category list)
+ * - POST /products/categories/ (create category)
  * - POST /products/stock-batches/ (purchase-led stock intake => creates batch + receipt movement)
  * - GET  /products/stock-batches/ (list, filters: store_id, product_id)
  *
@@ -204,6 +206,27 @@ export async function fetchCategories() {
   }
 }
 
+export async function createCategory(payload = {}) {
+  try {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid category payload.");
+    }
+
+    const name = String(payload.name || "").trim();
+    if (!name) throw new Error("name is required.");
+
+    const res = await axiosClient.post("/products/categories/", { name });
+
+    if (!res.data || typeof res.data !== "object") {
+      throw new Error("Categories API: Invalid create response");
+    }
+
+    return res.data;
+  } catch (err) {
+    throw new Error(extractErrorMessage(err, "Failed to create category."));
+  }
+}
+
 // ======================================================
 // PRODUCTS (STAFF + PUBLIC)
 // ======================================================
@@ -288,6 +311,7 @@ export async function createProduct(payload = {}, { storeId } = {}) {
 // ======================================================
 
 export async function intakeStockBatch({
+  storeId,
   productId,
   quantity_received,
   unit_cost,
@@ -295,6 +319,8 @@ export async function intakeStockBatch({
   batch_number,
 } = {}) {
   try {
+    const sid = resolveStoreId(storeId);
+
     const pid = String(productId || "").trim();
     if (!pid) throw new Error("productId is required.");
 
@@ -309,8 +335,13 @@ export async function intakeStockBatch({
     const exp = String(expiry_date || "").trim();
     if (!exp) throw new Error("expiry_date is required (YYYY-MM-DD).");
 
+    // IMPORTANT:
+    // - Backend StockBatchViewSet.get_queryset() filters by store_id on StockBatch.
+    // - Stock intake service requires store_id (resolved from product.store if omitted),
+    //   but passing store_id from UI avoids ambiguity and keeps multi-store strict.
     const payload = {
       product_id: pid,
+      ...(sid ? { store_id: sid } : {}),
       quantity_received: Math.floor(qty),
       unit_cost: String(cost.toFixed(2)),
       expiry_date: exp,
@@ -331,7 +362,11 @@ export async function intakeStockBatch({
   }
 }
 
-export async function fetchStockBatches({ storeId, productId, include_inactive } = {}) {
+export async function fetchStockBatches({
+  storeId,
+  productId,
+  include_inactive,
+} = {}) {
   try {
     const sid = resolveStoreId(storeId);
 

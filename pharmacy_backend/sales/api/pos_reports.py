@@ -29,6 +29,11 @@ Rule:
     BUT exclude audits for sales that have SaleItemRefund history
     (prevents double-counting and avoids auto-finalize attribution errors)
 
+Cash reconciliation (REFUND-AWARE):
+- Cash In: allocations for sales of the day
+- Cash Out: refund events of the day, pro-rated across the original sale allocations
+- Net: In - Out
+
 Security:
 - Admin-only
 """
@@ -119,7 +124,6 @@ def _refund_amount_from_item_refund(row) -> float:
     if hasattr(row, "line_total_refund_amount"):
         return _sum_money(row.line_total_refund_amount)
 
-    # Fallback (should not happen in your codebase)
     qty = getattr(row, "quantity_refunded", 0) or 0
     unit_price = getattr(row, "unit_price_snapshot", 0) or 0
     try:
@@ -151,42 +155,131 @@ def _refunds_for_day(*, start, end):
     refund_count = 0
     refund_total = 0.0
 
-    # -----------------------------
-    # 1) PARTIAL REFUNDS (item rows)
-    # -----------------------------
     sales_with_item_refunds = set()
 
+    # 1) PARTIAL REFUNDS
     if SaleItemRefund is not None:
         item_qs = SaleItemRefund.objects.filter(
             refunded_at__gte=start, refunded_at__lt=end
         )
+        refund_count += item_qs.count()
+        refund_total += sum(_refund_amount_from_item_refund(r) for r in item_qs.iterator())
 
-        item_count = item_qs.count()
-        item_total = sum(_refund_amount_from_item_refund(r) for r in item_qs.iterator())
-
-        refund_count += item_count
-        refund_total += item_total
-
-        # Used to exclude audits that represent auto-finalization (avoid double count)
+        # used to exclude audits for auto-finalization / double counting
         sales_with_item_refunds = set(
             SaleItemRefund.objects.values_list("sale_id", flat=True).distinct()
         )
 
-    # -----------------------------
-    # 2) FULL REFUNDS (audit rows)
-    # -----------------------------
+    # 2) FULL REFUNDS
     audit_qs = SaleRefundAudit.objects.filter(refunded_at__gte=start, refunded_at__lt=end)
-
     if sales_with_item_refunds:
         audit_qs = audit_qs.exclude(sale_id__in=list(sales_with_item_refunds))
 
-    audit_count = audit_qs.count()
-    audit_total = sum(_refund_amount_from_audit(a) for a in audit_qs.iterator())
-
-    refund_count += audit_count
-    refund_total += audit_total
+    refund_count += audit_qs.count()
+    refund_total += sum(_refund_amount_from_audit(a) for a in audit_qs.iterator())
 
     return refund_count, refund_total
+
+
+def _refund_events_for_day_by_sale(*, start, end) -> dict[str, float]:
+    """
+    Build {sale_id(str): refund_amount_for_day(float)} for refund EVENTS occurring in the day.
+
+    - Partial refunds: sum SaleItemRefund.line_total_refund_amount grouped by sale_id for day.
+    - Full refunds: sum SaleRefundAudit refund amount grouped by sale_id for day,
+      excluding audits for sales that have any SaleItemRefund history (avoid double count).
+    """
+    by_sale: dict[str, float] = {}
+
+    sales_with_item_refunds = set()
+
+    if SaleItemRefund is not None:
+        partial_qs = SaleItemRefund.objects.filter(
+            refunded_at__gte=start, refunded_at__lt=end
+        )
+
+        for r in partial_qs.iterator():
+            sid = str(getattr(r, "sale_id", "") or "")
+            if not sid:
+                continue
+            by_sale[sid] = by_sale.get(sid, 0.0) + _refund_amount_from_item_refund(r)
+
+        sales_with_item_refunds = set(
+            SaleItemRefund.objects.values_list("sale_id", flat=True).distinct()
+        )
+
+    audit_qs = SaleRefundAudit.objects.filter(refunded_at__gte=start, refunded_at__lt=end)
+    if sales_with_item_refunds:
+        audit_qs = audit_qs.exclude(sale_id__in=list(sales_with_item_refunds))
+
+    for a in audit_qs.iterator():
+        sid = str(getattr(a, "sale_id", "") or "")
+        if not sid:
+            continue
+        by_sale[sid] = by_sale.get(sid, 0.0) + _refund_amount_from_audit(a)
+
+    return by_sale
+
+
+def _allocate_refund_out_by_method(*, refund_by_sale: dict[str, float]) -> dict[str, float]:
+    """
+    Attribute refund-out amounts to payment methods by pro-rating across the sale's
+    original payment allocations.
+
+    Returns:
+      {
+        "cash": 12.34,
+        "non_cash": 56.78,
+        "unknown": 0.00
+      }
+    """
+    out = {"cash": 0.0, "non_cash": 0.0, "unknown": 0.0}
+
+    if not refund_by_sale:
+        return out
+
+    if SalePaymentAllocation is None:
+        # no allocation table available -> cannot attribute by method
+        out["unknown"] = float(sum(refund_by_sale.values()))
+        return out
+
+    sale_ids = list(refund_by_sale.keys())
+
+    allocs = (
+        SalePaymentAllocation.objects.filter(sale_id__in=sale_ids)
+        .values("sale_id", "method")
+        .annotate(total=Sum("amount"))
+    )
+
+    alloc_by_sale: dict[str, list[dict]] = {}
+    for row in allocs:
+        sid = str(row["sale_id"])
+        alloc_by_sale.setdefault(sid, []).append(
+            {"method": (row.get("method") or "").lower(), "total": _sum_money(row.get("total"))}
+        )
+
+    for sid, refund_amt in refund_by_sale.items():
+        refund_amt = float(refund_amt or 0.0)
+        if refund_amt <= 0:
+            continue
+
+        legs = alloc_by_sale.get(sid) or []
+        legs_total = sum(l["total"] for l in legs)
+
+        if legs_total <= 0:
+            out["unknown"] += refund_amt
+            continue
+
+        # pro-rate
+        for leg in legs:
+            share = (leg["total"] / legs_total) if legs_total else 0.0
+            portion = refund_amt * share
+            if (leg["method"] or "").lower() == "cash":
+                out["cash"] += portion
+            else:
+                out["non_cash"] += portion
+
+    return out
 
 
 class DailySalesReportView(APIView):
@@ -280,37 +373,50 @@ class CashReconciliationReportView(APIView):
         day = _parse_date(request.query_params.get("date"))
         sales_qs, start, end = _sales_for_day(day)
 
-        cash_total = 0.0
-        non_cash_total = 0.0
+        # -----------------------------
+        # SALES IN (for the day's sales)
+        # -----------------------------
+        cash_in = 0.0
+        non_cash_in = 0.0
 
         if SalePaymentAllocation is not None:
-            alloc_qs = SalePaymentAllocation.objects.filter(
-                sale__in=sales_qs,
-                created_at__gte=start,
-                created_at__lt=end,
-            )
+            alloc_qs = SalePaymentAllocation.objects.filter(sale__in=sales_qs)
 
-            cash_total = _sum_money(
+            cash_in = _sum_money(
                 alloc_qs.filter(method__iexact="cash")
                 .aggregate(s=Sum("amount"))
                 .get("s")
             )
-            non_cash_total = _sum_money(
+            non_cash_in = _sum_money(
                 alloc_qs.exclude(method__iexact="cash")
                 .aggregate(s=Sum("amount"))
                 .get("s")
             )
         else:
-            cash_total = _sum_money(
+            cash_in = _sum_money(
                 sales_qs.filter(payment_method__iexact="cash")
                 .aggregate(s=Sum("total_amount"))
                 .get("s")
             )
-            non_cash_total = _sum_money(
+            non_cash_in = _sum_money(
                 sales_qs.exclude(payment_method__iexact="cash")
                 .aggregate(s=Sum("total_amount"))
                 .get("s")
             )
+
+        # -----------------------------
+        # REFUNDS OUT (events that day)
+        # -----------------------------
+        refund_by_sale = _refund_events_for_day_by_sale(start=start, end=end)
+        out_by_method = _allocate_refund_out_by_method(refund_by_sale=refund_by_sale)
+
+        cash_out = float(out_by_method.get("cash") or 0.0)
+        non_cash_out = float(out_by_method.get("non_cash") or 0.0)
+        unknown_out = float(out_by_method.get("unknown") or 0.0)
+
+        # NET
+        cash_net = cash_in - cash_out
+        non_cash_net = non_cash_in - non_cash_out
 
         by_payment_method = list(
             sales_qs.values("payment_method")
@@ -320,8 +426,27 @@ class CashReconciliationReportView(APIView):
 
         payload = {
             "date": day.isoformat(),
-            "cash_total_amount": cash_total,
-            "non_cash_total_amount": non_cash_total,
+
+            # Backward-compatible keys (now NET, refund-aware)
+            "cash_total_amount": cash_net,
+            "non_cash_total_amount": non_cash_net,
+
+            # New transparency fields (won’t break consumers that ignore them)
+            "sales_in": {
+                "cash_in_amount": cash_in,
+                "non_cash_in_amount": non_cash_in,
+            },
+            "refunds_out": {
+                "cash_out_amount": cash_out,
+                "non_cash_out_amount": non_cash_out,
+                "unknown_out_amount": unknown_out,
+            },
+            "net": {
+                "cash_net_amount": cash_net,
+                "non_cash_net_amount": non_cash_net,
+                "total_net_amount": (cash_net + non_cash_net),
+            },
+
             "by_payment_method": [
                 {
                     "payment_method": r.get("payment_method") or "unknown",

@@ -1,5 +1,27 @@
 # sales/views/reports.py
 
+"""
+PATH: sales/views/reports.py
+
+POS REPORTS (AUTHORITATIVE OPERATIONAL REPORTS)
+
+Fixes included:
+- Refund reporting now filters by SaleRefundAudit.refunded_at (refund event time),
+  NOT by sale.completed_at (sale event time).
+  This fixes the bug where refunds done today for a sale completed earlier
+  would show as 0 in Daily Sales and Z-Report.
+
+- Refund totals are computed best-effort to support partial refunds:
+  prefer any explicit refunded amount fields if present, otherwise fallback
+  to original_total_amount.
+
+Notes:
+- Gross numbers are still based on COMPLETED sales within day bounds.
+- Refunds are based on audit events within day bounds.
+"""
+
+from __future__ import annotations
+
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 
@@ -67,12 +89,37 @@ def _display_name(
     return "Unknown"
 
 
+def _refund_amount_from_audit(audit: SaleRefundAudit) -> Decimal:
+    """
+    Best-effort refund amount resolver.
+
+    Prefer partial/refund amount fields if present.
+    Fallback to original_total_amount.
+    """
+    candidate_fields = [
+        "refund_total_amount",
+        "refunded_total_amount",
+        "refund_amount",
+        "refunded_amount",
+        "total_refunded_amount",
+        "partial_refund_total_amount",
+    ]
+
+    for attr in candidate_fields:
+        if hasattr(audit, attr):
+            v = getattr(audit, attr, None)
+            if v is not None:
+                return Decimal(str(v))
+
+    return Decimal(str(getattr(audit, "original_total_amount", 0) or 0))
+
+
 class DailySalesReportView(APIView):
     """
     Daily Sales Report (authoritative summary)
     Includes:
     - gross sales (completed)
-    - refunds (refunded via audit snapshot)
+    - refunds (refunded via audit events)
     - net sales
     - payment breakdown
     - cashier breakdown
@@ -109,12 +156,6 @@ class DailySalesReportView(APIView):
             completed_at__lt=end,
         )
 
-        refunded_qs = Sale.objects.filter(
-            status=Sale.STATUS_REFUNDED,
-            completed_at__gte=start,
-            completed_at__lt=end,
-        )
-
         # Gross completed totals
         gross = completed_qs.aggregate(
             sale_count=Count("id"),
@@ -124,17 +165,24 @@ class DailySalesReportView(APIView):
             total=Sum("total_amount"),
         )
 
-        # Refund totals (prefer audit snapshot)
-        refunds = SaleRefundAudit.objects.filter(
-            sale__completed_at__gte=start,
-            sale__completed_at__lt=end,
-        ).aggregate(
-            refund_count=Count("id"),
-            refund_total=Sum("original_total_amount"),
+        gross_total = gross.get("total") or Decimal("0.00")
+
+        # Refund totals MUST be based on refund event time
+        refunds_qs = SaleRefundAudit.objects.filter(
+            refunded_at__gte=start,
+            refunded_at__lt=end,
         )
 
-        gross_total = gross.get("total") or Decimal("0.00")
-        refund_total = refunds.get("refund_total") or Decimal("0.00")
+        refund_events_count = refunds_qs.count()
+        refund_total = Decimal("0.00")
+        refunded_sale_ids = set()
+
+        for a in refunds_qs.iterator():
+            refund_total += _refund_amount_from_audit(a)
+            sid = getattr(a, "sale_id", None)
+            if sid is not None:
+                refunded_sale_ids.add(sid)
+
         net_total = gross_total - refund_total
 
         # Payment breakdown (completed only)
@@ -156,8 +204,6 @@ class DailySalesReportView(APIView):
             .order_by("user__email")
         )
 
-        refunded_count = refunded_qs.count()
-
         return Response(
             {
                 "date": str(d),
@@ -169,8 +215,9 @@ class DailySalesReportView(APIView):
                     "total_amount": _money(gross_total),
                 },
                 "refunds": {
-                    "refunded_sales_count": refunded_count,
-                    "refund_events_count": refunds.get("refund_count") or 0,
+                    # more accurate than relying on Sale.STATUS_REFUNDED
+                    "refunded_sales_count": len(refunded_sale_ids),
+                    "refund_events_count": refund_events_count,
                     "refund_total_amount": _money(refund_total),
                 },
                 "net": {
@@ -311,10 +358,15 @@ class ZReportView(APIView):
         ) or Decimal("0.00")
         tx_count = completed_qs.count()
 
-        refunds_total = SaleRefundAudit.objects.filter(
-            sale__completed_at__gte=start,
-            sale__completed_at__lt=end,
-        ).aggregate(total=Sum("original_total_amount")).get("total") or Decimal("0.00")
+        # Refund totals MUST be based on refund event time
+        refunds_qs = SaleRefundAudit.objects.filter(
+            refunded_at__gte=start,
+            refunded_at__lt=end,
+        )
+
+        refunds_total = Decimal("0.00")
+        for a in refunds_qs.iterator():
+            refunds_total += _refund_amount_from_audit(a)
 
         return Response(
             {
