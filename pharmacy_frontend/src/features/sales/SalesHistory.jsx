@@ -86,8 +86,7 @@ function statusTone(status) {
   const s = String(status || "").toLowerCase();
   if (s.includes("refunded") || s.includes("reversed"))
     return "bg-amber-50 text-amber-800 border-amber-200";
-  if (s.includes("partial"))
-    return "bg-orange-50 text-orange-800 border-orange-200";
+  if (s.includes("partial")) return "bg-orange-50 text-orange-800 border-orange-200";
   if (s.includes("paid") || s.includes("completed") || s.includes("success"))
     return "bg-green-50 text-green-800 border-green-200";
   if (s.includes("void") || s.includes("cancel"))
@@ -272,7 +271,10 @@ export default function SalesHistory() {
       closeRefundModal();
     },
     onError: (err) => {
-      setNotice({ type: "error", message: extractErrMessage(err, "Refund failed. Please try again.") });
+      setNotice({
+        type: "error",
+        message: extractErrMessage(err, "Refund failed. Please try again."),
+      });
     },
   });
 
@@ -373,7 +375,10 @@ export default function SalesHistory() {
 
     if (refundMode === "partial") {
       if (!partialValidation.ok) {
-        setNotice({ type: "error", message: partialValidation.message || "Invalid partial refund." });
+        setNotice({
+          type: "error",
+          message: partialValidation.message || "Invalid partial refund.",
+        });
         return;
       }
 
@@ -482,8 +487,8 @@ export default function SalesHistory() {
         </label>
 
         <div className="text-xs text-gray-500 mt-2 md:mt-6">
-          Showing{" "}
-          <span className="font-semibold text-gray-900">{filteredSales.length}</span> sale(s)
+          Showing <span className="font-semibold text-gray-900">{filteredSales.length}</span>{" "}
+          sale(s)
         </div>
       </div>
 
@@ -503,11 +508,8 @@ export default function SalesHistory() {
             const pm = String(sale?.payment_method || "—");
             const status = String(sale?.status || "—");
 
-            // Receipt route is /pos/:storeId/receipt/:saleId
-            // We MUST resolve storeId safely to avoid broken links.
             const receiptStoreId = resolveSaleStoreId(sale, activeStoreId);
-            const receiptHref =
-              saleId && receiptStoreId ? `/pos/${receiptStoreId}/receipt/${saleId}` : null;
+            const receiptHref = saleId && receiptStoreId ? `/pos/${receiptStoreId}/receipt/${saleId}` : null;
 
             const isFullRefund = hasFullRefund(sale);
             const isPartial = hasPartialRefund(sale);
@@ -581,10 +583,7 @@ export default function SalesHistory() {
                     <div className="mt-4 flex justify-end gap-2 flex-wrap">
                       {receiptHref ? (
                         <>
-                          <Link
-                            to={receiptHref}
-                            className="text-sm px-3 py-2 rounded-lg border hover:bg-gray-50"
-                          >
+                          <Link to={receiptHref} className="text-sm px-3 py-2 rounded-lg border hover:bg-gray-50">
                             View Receipt
                           </Link>
 
@@ -630,35 +629,32 @@ export default function SalesHistory() {
                     {/* Items */}
                     <div className="mt-4">
                       {items.length === 0 ? (
-                        <div className="text-sm text-gray-600">
-                          Items are not included in this sales response yet.
-                        </div>
+                        <div className="text-sm text-gray-600">Items are not included in this sales response yet.</div>
                       ) : (
-                        <table className="w-full text-sm border-t">
-                          <thead>
-                            <tr className="text-left text-gray-600">
-                              <th className="py-2">Product</th>
-                              <th>Qty</th>
-                              <th>Unit</th>
-                              <th className="text-right">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {items.map((item) => (
-                              <tr
-                                key={item.id || `${item.product_id}-${item.quantity}`}
-                                className="border-t"
-                              >
-                                <td className="py-2">{item.product_name || item.name || "—"}</td>
-                                <td>{Number(item.quantity || 0)}</td>
-                                <td>{formatMoney(Number(item.unit_price || 0))}</td>
-                                <td className="text-right">
-                                  {formatMoney(Number(item.line_total ?? item.total_price ?? 0))}
-                                </td>
+                        <div className="w-full overflow-x-auto">
+                          <table className="min-w-[720px] w-full text-sm border-t">
+                            <thead>
+                              <tr className="text-left text-gray-600">
+                                <th className="py-2">Product</th>
+                                <th>Qty</th>
+                                <th>Unit</th>
+                                <th className="text-right">Total</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {items.map((item) => (
+                                <tr key={item.id || `${item.product_id}-${item.quantity}`} className="border-t">
+                                  <td className="py-2">{item.product_name || item.name || "—"}</td>
+                                  <td>{Number(item.quantity || 0)}</td>
+                                  <td>{formatMoney(Number(item.unit_price || 0))}</td>
+                                  <td className="text-right">
+                                    {formatMoney(Number(item.line_total ?? item.total_price ?? 0))}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       )}
                     </div>
 
@@ -671,8 +667,7 @@ export default function SalesHistory() {
 
                       {isPartial ? (
                         <p className="text-orange-700 font-medium">
-                          Refunded so far:{" "}
-                          {formatMoney(toNum(sale?.refunded_amount_total) || partialAmount || 0)}
+                          Refunded so far: {formatMoney(toNum(sale?.refunded_amount_total) || partialAmount || 0)}
                         </p>
                       ) : null}
                     </div>
@@ -687,244 +682,246 @@ export default function SalesHistory() {
       {/* REFUND MODAL (FULL or PARTIAL) */}
       {refundSaleId ? (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-3xl p-6 space-y-4 border">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">Refund</h2>
-                <p className="text-sm text-gray-600 mt-1">
-                  Invoice:{" "}
-                  <span className="font-mono">
-                    {refundSaleDetail ? getInvoiceNo(refundSaleDetail) : "Loading…"}
-                  </span>
-                </p>
+          {/* Shell: fixed height, no overflow. Body scrolls. Footer sticky. */}
+          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[88vh] border shadow-lg overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-5 border-b bg-white">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Refund</h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Invoice:{" "}
+                    <span className="font-mono">
+                      {refundSaleDetail ? getInvoiceNo(refundSaleDetail) : "Loading…"}
+                    </span>
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeRefundModal}
+                  className="px-3 py-1 rounded border text-sm hover:bg-gray-50"
+                  disabled={refundMutation.isPending}
+                >
+                  Close
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={closeRefundModal}
-                className="px-3 py-1 rounded border text-sm hover:bg-gray-50"
-                disabled={refundMutation.isPending}
-              >
-                Close
-              </button>
+              {/* Mode toggle */}
+              <div className="flex items-center gap-2 flex-wrap mt-4">
+                <button
+                  type="button"
+                  onClick={() => setRefundMode("full")}
+                  className={`px-3 py-2 rounded-lg border text-sm ${
+                    refundMode === "full" ? "bg-gray-900 text-white border-gray-900" : "hover:bg-gray-50"
+                  }`}
+                  disabled={refundMutation.isPending}
+                >
+                  Full
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRefundMode("partial")}
+                  className={`px-3 py-2 rounded-lg border text-sm ${
+                    refundMode === "partial" ? "bg-gray-900 text-white border-gray-900" : "hover:bg-gray-50"
+                  }`}
+                  disabled={refundMutation.isPending}
+                >
+                  Partial
+                </button>
+
+                <div className="text-xs text-gray-500 ml-auto">
+                  Backend enforces ceilings + accounting correctness.
+                </div>
+              </div>
             </div>
 
-            {/* Mode toggle */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setRefundMode("full")}
-                className={`px-3 py-2 rounded-lg border text-sm ${
-                  refundMode === "full"
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "hover:bg-gray-50"
-                }`}
-                disabled={refundMutation.isPending}
-              >
-                Full
-              </button>
-              <button
-                type="button"
-                onClick={() => setRefundMode("partial")}
-                className={`px-3 py-2 rounded-lg border text-sm ${
-                  refundMode === "partial"
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "hover:bg-gray-50"
-                }`}
-                disabled={refundMutation.isPending}
-              >
-                Partial
-              </button>
-
-              <div className="text-xs text-gray-500 ml-auto">
-                Backend enforces ceilings + accounting correctness.
-              </div>
-            </div>
-
-            {/* Sale detail loading/errors */}
-            {refundSaleDetailQuery.isLoading ? (
-              <div className="rounded-xl border bg-white p-4 text-sm text-gray-700">
-                Loading sale details for refund…
-              </div>
-            ) : refundSaleDetailQuery.isError ? (
-              <div className="rounded-xl border bg-red-50 p-4 text-sm text-red-800">
-                Failed to load sale details. Try closing and reopening the refund modal.
-              </div>
-            ) : null}
-
-            {/* Full refund box */}
-            {refundMode === "full" ? (
-              <div className="rounded-xl border bg-amber-50/40 p-4 text-sm text-amber-900">
-                <div className="font-semibold">Full refund</div>
-                <div className="mt-1">
-                  This will refund the entire sale and reverse stock + ledger postings.
+            {/* Scrollable Body */}
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {/* Sale detail loading/errors */}
+              {refundSaleDetailQuery.isLoading ? (
+                <div className="rounded-xl border bg-white p-4 text-sm text-gray-700">
+                  Loading sale details for refund…
                 </div>
-                <div className="mt-2">
-                  Refund amount:{" "}
-                  <span className="font-semibold">{formatMoney(refundTotals.total || 0)}</span>
+              ) : refundSaleDetailQuery.isError ? (
+                <div className="rounded-xl border bg-red-50 p-4 text-sm text-red-800">
+                  Failed to load sale details. Try closing and reopening the refund modal.
                 </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border bg-blue-50/40 p-4 text-sm text-blue-900">
-                <div className="font-semibold">Partial refund</div>
-                <div className="mt-1">
-                  Select item quantities to refund. Backend will restore stock for those quantities and
-                  post a proportional ledger reversal.
-                </div>
-              </div>
-            )}
+              ) : null}
 
-            {/* Partial item picker */}
-            {refundMode === "partial" ? (
-              <div className="rounded-xl border p-4">
-                {!refundItems.length ? (
-                  <div className="text-sm text-gray-700">
-                    No items available on this sale detail response. Partial refund needs items.
+              {/* Full refund box */}
+              {refundMode === "full" ? (
+                <div className="rounded-xl border bg-amber-50/40 p-4 text-sm text-amber-900">
+                  <div className="font-semibold">Full refund</div>
+                  <div className="mt-1">This will refund the entire sale and reverse stock + ledger postings.</div>
+                  <div className="mt-2">
+                    Refund amount: <span className="font-semibold">{formatMoney(refundTotals.total || 0)}</span>
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div className="text-sm font-semibold text-gray-900">Refund items</div>
+                </div>
+              ) : (
+                <div className="rounded-xl border bg-blue-50/40 p-4 text-sm text-blue-900">
+                  <div className="font-semibold">Partial refund</div>
+                  <div className="mt-1">
+                    Select item quantities to refund. Backend will restore stock for those quantities and post a
+                    proportional ledger reversal.
+                  </div>
+                </div>
+              )}
 
-                      <button
-                        type="button"
-                        className="text-xs px-3 py-2 rounded-lg border hover:bg-gray-50"
-                        disabled={refundMutation.isPending}
-                        onClick={() => {
-                          // Fill each item with its remaining qty
-                          const next = {};
-                          for (const item of refundItems) {
-                            const id = String(item?.id || "");
-                            if (!id) continue;
-                            const sold = toInt(item?.quantity);
-                            const already = getAlreadyRefundedQty(item);
-                            const remaining = Math.max(0, sold - already);
-                            if (remaining > 0) next[id] = String(remaining);
-                          }
-                          setRefundQtyByItemId(next);
-                        }}
-                      >
-                        Auto-fill remaining
-                      </button>
+              {/* Partial item picker */}
+              {refundMode === "partial" ? (
+                <div className="rounded-xl border p-4">
+                  {!refundItems.length ? (
+                    <div className="text-sm text-gray-700">
+                      No items available on this sale detail response. Partial refund needs items.
                     </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="text-sm font-semibold text-gray-900">Refund items</div>
 
-                    <table className="w-full text-sm border-t">
-                      <thead>
-                        <tr className="text-left text-gray-600">
-                          <th className="py-2">Product</th>
-                          <th className="w-20">Sold</th>
-                          <th className="w-24">Refunded</th>
-                          <th className="w-24">Remaining</th>
-                          <th className="w-32 text-right">Refund qty</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {refundItems.map((item) => {
-                          const id = String(item?.id || "");
-                          const name = item?.product_name || item?.name || "—";
-                          const sold = toInt(item?.quantity);
-                          const already = getAlreadyRefundedQty(item);
-                          const remaining = Math.max(0, sold - already);
+                        <button
+                          type="button"
+                          className="text-xs px-3 py-2 rounded-lg border hover:bg-gray-50"
+                          disabled={refundMutation.isPending}
+                          onClick={() => {
+                            const next = {};
+                            for (const item of refundItems) {
+                              const id = String(item?.id || "");
+                              if (!id) continue;
+                              const sold = toInt(item?.quantity);
+                              const already = getAlreadyRefundedQty(item);
+                              const remaining = Math.max(0, sold - already);
+                              if (remaining > 0) next[id] = String(remaining);
+                            }
+                            setRefundQtyByItemId(next);
+                          }}
+                        >
+                          Auto-fill remaining
+                        </button>
+                      </div>
 
-                          const value = refundQtyByItemId[id] ?? "";
-
-                          return (
-                            <tr key={id} className="border-t">
-                              <td className="py-2">{name}</td>
-                              <td>{sold}</td>
-                              <td>{already}</td>
-                              <td className={remaining === 0 ? "text-red-600 font-semibold" : ""}>
-                                {remaining}
-                              </td>
-                              <td className="text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  <input
-                                    value={value}
-                                    onChange={(e) => {
-                                      const v = e.target.value;
-                                      setRefundQtyByItemId((prev) => ({ ...prev, [id]: v }));
-                                    }}
-                                    inputMode="numeric"
-                                    placeholder="0"
-                                    className="h-9 w-20 rounded border px-2 text-right"
-                                    disabled={refundMutation.isPending || remaining === 0}
-                                    title={remaining === 0 ? "No refundable qty remaining" : ""}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="text-xs px-2 py-2 rounded border hover:bg-gray-50"
-                                    disabled={refundMutation.isPending || remaining === 0}
-                                    title="Set to remaining"
-                                    onClick={() =>
-                                      setRefundQtyByItemId((prev) => ({ ...prev, [id]: String(remaining) }))
-                                    }
-                                  >
-                                    Max
-                                  </button>
-                                </div>
-                              </td>
+                      <div className="w-full overflow-x-auto">
+                        <table className="min-w-[860px] w-full text-sm border-t">
+                          <thead>
+                            <tr className="text-left text-gray-600">
+                              <th className="py-2">Product</th>
+                              <th className="w-20">Sold</th>
+                              <th className="w-24">Refunded</th>
+                              <th className="w-24">Remaining</th>
+                              <th className="w-40 text-right">Refund qty</th>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                          </thead>
+                          <tbody>
+                            {refundItems.map((item) => {
+                              const id = String(item?.id || "");
+                              const name = item?.product_name || item?.name || "—";
+                              const sold = toInt(item?.quantity);
+                              const already = getAlreadyRefundedQty(item);
+                              const remaining = Math.max(0, sold - already);
 
-                    {!partialValidation.ok && partialValidation.message ? (
-                      <div className="mt-2 text-xs border rounded p-2 border-red-200 bg-red-50 text-red-800">
-                        {partialValidation.message}
+                              const value = refundQtyByItemId[id] ?? "";
+
+                              return (
+                                <tr key={id} className="border-t">
+                                  <td className="py-2">{name}</td>
+                                  <td>{sold}</td>
+                                  <td>{already}</td>
+                                  <td className={remaining === 0 ? "text-red-600 font-semibold" : ""}>{remaining}</td>
+                                  <td className="text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <input
+                                        value={value}
+                                        onChange={(e) => {
+                                          const v = e.target.value;
+                                          setRefundQtyByItemId((prev) => ({ ...prev, [id]: v }));
+                                        }}
+                                        inputMode="numeric"
+                                        placeholder="0"
+                                        className="h-9 w-20 rounded border px-2 text-right"
+                                        disabled={refundMutation.isPending || remaining === 0}
+                                        title={remaining === 0 ? "No refundable qty remaining" : ""}
+                                      />
+                                      <button
+                                        type="button"
+                                        className="text-xs px-2 py-2 rounded border hover:bg-gray-50"
+                                        disabled={refundMutation.isPending || remaining === 0}
+                                        title="Set to remaining"
+                                        onClick={() =>
+                                          setRefundQtyByItemId((prev) => ({ ...prev, [id]: String(remaining) }))
+                                        }
+                                      >
+                                        Max
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                    ) : (
-                      <div className="mt-2 text-xs text-gray-500">
-                        Tip: keep refund qty within the “Remaining” column.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : null}
 
-            <textarea
-              placeholder="Refund reason (optional)"
-              value={refundReason}
-              onChange={(e) => setRefundReason(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              rows={3}
-              disabled={refundMutation.isPending}
-            />
+                      {!partialValidation.ok && partialValidation.message ? (
+                        <div className="mt-2 text-xs border rounded p-2 border-red-200 bg-red-50 text-red-800">
+                          {partialValidation.message}
+                        </div>
+                      ) : (
+                        <div className="mt-2 text-xs text-gray-500">
+                          Tip: keep refund qty within the “Remaining” column.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : null}
 
-            {notice.type === "error" && notice.message ? (
-              <div className="border rounded p-3 text-sm border-red-200 bg-red-50 text-red-800">
-                {notice.message}
-              </div>
-            ) : null}
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={closeRefundModal}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              <textarea
+                placeholder="Refund reason (optional)"
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                rows={3}
                 disabled={refundMutation.isPending}
-              >
-                Cancel
-              </button>
+              />
 
-              <button
-                type="button"
-                onClick={handleRefundSubmit}
-                disabled={
-                  refundMutation.isPending ||
-                  !canRefund ||
-                  (refundMode === "partial" && !partialValidation.ok)
-                }
-                className="px-4 py-2 bg-red-600 text-white rounded-lg disabled:opacity-50"
-                title={!canRefund ? "Only admin/pharmacist can refund" : "Confirm refund"}
-              >
-                {refundMutation.isPending
-                  ? "Refunding…"
-                  : refundMode === "partial"
-                  ? "Confirm Partial Refund"
-                  : "Confirm Full Refund"}
-              </button>
+              {notice.type === "error" && notice.message ? (
+                <div className="border rounded p-3 text-sm border-red-200 bg-red-50 text-red-800">
+                  {notice.message}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Sticky Footer */}
+            <div className="p-5 border-t bg-white sticky bottom-0">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeRefundModal}
+                  className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                  disabled={refundMutation.isPending}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRefundSubmit}
+                  disabled={
+                    refundMutation.isPending ||
+                    !canRefund ||
+                    (refundMode === "partial" && !partialValidation.ok)
+                  }
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg disabled:opacity-50"
+                  title={!canRefund ? "Only admin/pharmacist can refund" : "Confirm refund"}
+                >
+                  {refundMutation.isPending
+                    ? "Refunding…"
+                    : refundMode === "partial"
+                    ? "Confirm Partial Refund"
+                    : "Confirm Full Refund"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

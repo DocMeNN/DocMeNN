@@ -70,24 +70,46 @@ function clampNonNegInt(n) {
   return Math.max(0, Math.round(x));
 }
 
-// ---------- Modal (no external deps) ----------
+// ---------- Modal (tight + scroll-safe) ----------
 function Modal({ open, title, children, onClose }) {
   if (!open) return null;
+
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="w-full max-w-2xl rounded-xl bg-white shadow-lg border">
-          <div className="flex items-center justify-between px-5 py-4 border-b">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-            </div>
-            <button type="button" className="px-3 py-1 rounded border text-sm" onClick={onClose}>
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      <div className="absolute inset-0 flex items-start justify-center p-3 sm:p-4 overflow-y-auto">
+        <div
+          className="
+            w-[min(760px,94vw)]
+            my-4
+            rounded-xl bg-white shadow-lg border
+            max-h-[88vh]
+            flex flex-col overflow-hidden
+          "
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+              {title}
+            </h3>
+            <button
+              type="button"
+              className="px-3 py-1 rounded border text-sm"
+              onClick={onClose}
+            >
               Close
             </button>
           </div>
 
-          <div className="p-5">{children}</div>
+          <div className="p-4 sm:p-5 overflow-y-auto overflow-x-hidden min-w-0">
+            {children}
+          </div>
         </div>
       </div>
     </div>
@@ -100,7 +122,9 @@ function SplitPaymentEditor({ totalAmount, allocations, setAllocations }) {
   const remainingCents = totalCents - allocatedCents;
 
   const updateLine = (idx, patch) => {
-    setAllocations((prev) => prev.map((x, i) => (i === idx ? { ...x, ...patch } : x)));
+    setAllocations((prev) =>
+      prev.map((x, i) => (i === idx ? { ...x, ...patch } : x))
+    );
   };
 
   const addLine = () => {
@@ -122,19 +146,21 @@ function SplitPaymentEditor({ totalAmount, allocations, setAllocations }) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0">
       <div className="rounded-lg border bg-white p-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-gray-600">Total Due</p>
           <p className="text-lg font-semibold">{formatMoney(totalAmount)}</p>
         </div>
 
-        <div className="flex items-center justify-between mt-2">
+        <div className="flex items-center justify-between mt-2 gap-3">
           <p className="text-sm text-gray-600">Allocated</p>
-          <p className="text-sm font-medium">{formatMoney(centsToAmountString(allocatedCents))}</p>
+          <p className="text-sm font-medium">
+            {formatMoney(centsToAmountString(allocatedCents))}
+          </p>
         </div>
 
-        <div className="flex items-center justify-between mt-1">
+        <div className="flex items-center justify-between mt-1 gap-3">
           <p className="text-sm text-gray-600">Remaining</p>
           <p
             className={`text-sm font-medium ${
@@ -146,77 +172,96 @@ function SplitPaymentEditor({ totalAmount, allocations, setAllocations }) {
         </div>
       </div>
 
-      <div className="space-y-3">
-        {(allocations || []).map((a, idx) => (
-          <div key={idx} className="rounded-lg border bg-white p-4 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div>
-                <label className="text-xs text-gray-500">Method</label>
-                <select
-                  className="w-full border rounded-md px-3 py-2"
-                  value={a.method || "cash"}
-                  onChange={(e) => updateLine(idx, { method: e.target.value })}
+      {/* ✅ KEY FIX: payment lines become a scroll region */}
+      <div className="rounded-lg border bg-white p-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-gray-900">Payment Lines</p>
+          <p className="text-xs text-gray-500">
+            {allocations?.length || 0} line(s)
+          </p>
+        </div>
+
+        <div className="mt-3 space-y-3 max-h-[42vh] overflow-y-auto pr-1">
+          {(allocations || []).map((a, idx) => (
+            <div
+              key={idx}
+              className="rounded-lg border bg-white p-3 space-y-3 min-w-0"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-w-0">
+                <div className="min-w-0">
+                  <label className="text-xs text-gray-500">Method</label>
+                  <select
+                    className="w-full border rounded-md px-3 py-2 min-w-0"
+                    value={a.method || "cash"}
+                    onChange={(e) =>
+                      updateLine(idx, { method: e.target.value })
+                    }
+                  >
+                    {PAYMENT_METHODS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="min-w-0">
+                  <label className="text-xs text-gray-500">Amount</label>
+                  <input
+                    className="w-full border rounded-md px-3 py-2 min-w-0"
+                    inputMode="decimal"
+                    value={centsToAmountString(a.amountCents || 0)}
+                    onChange={(e) =>
+                      updateLine(idx, { amountCents: toCents(e.target.value) })
+                    }
+                  />
+                </div>
+
+                <div className="min-w-0">
+                  <label className="text-xs text-gray-500">Reference</label>
+                  <input
+                    className="w-full border rounded-md px-3 py-2 min-w-0"
+                    value={a.reference || ""}
+                    onChange={(e) =>
+                      updateLine(idx, { reference: e.target.value })
+                    }
+                    placeholder="Optional"
+                  />
+                </div>
+
+                <div className="min-w-0">
+                  <label className="text-xs text-gray-500">Note</label>
+                  <input
+                    className="w-full border rounded-md px-3 py-2 min-w-0"
+                    value={a.note || ""}
+                    onChange={(e) => updateLine(idx, { note: e.target.value })}
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 sm:justify-between">
+                <button
+                  type="button"
+                  className="text-sm px-3 py-2 rounded-md border disabled:opacity-50 w-full sm:w-auto"
+                  onClick={() => fillRemaining(idx)}
+                  disabled={remainingCents <= 0}
                 >
-                  {PAYMENT_METHODS.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  Fill Remaining
+                </button>
 
-              <div>
-                <label className="text-xs text-gray-500">Amount</label>
-                <input
-                  className="w-full border rounded-md px-3 py-2"
-                  inputMode="decimal"
-                  value={centsToAmountString(a.amountCents || 0)}
-                  onChange={(e) => updateLine(idx, { amountCents: toCents(e.target.value) })}
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-gray-500">Reference</label>
-                <input
-                  className="w-full border rounded-md px-3 py-2"
-                  value={a.reference || ""}
-                  onChange={(e) => updateLine(idx, { reference: e.target.value })}
-                  placeholder="Optional"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-gray-500">Note</label>
-                <input
-                  className="w-full border rounded-md px-3 py-2"
-                  value={a.note || ""}
-                  onChange={(e) => updateLine(idx, { note: e.target.value })}
-                  placeholder="Optional"
-                />
+                <button
+                  type="button"
+                  className="text-sm px-3 py-2 rounded-md border text-red-700 disabled:opacity-50 w-full sm:w-auto"
+                  onClick={() => removeLine(idx)}
+                  disabled={(allocations || []).length <= 1}
+                >
+                  Remove
+                </button>
               </div>
             </div>
-
-            <div className="flex gap-2 justify-between">
-              <button
-                type="button"
-                className="text-sm px-3 py-2 rounded-md border disabled:opacity-50"
-                onClick={() => fillRemaining(idx)}
-                disabled={remainingCents <= 0}
-              >
-                Fill Remaining
-              </button>
-
-              <button
-                type="button"
-                className="text-sm px-3 py-2 rounded-md border text-red-700 disabled:opacity-50"
-                onClick={() => removeLine(idx)}
-                disabled={(allocations || []).length <= 1}
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
       <button
@@ -331,9 +376,6 @@ export default function PosPage() {
     setStatus(label);
   }
 
-  // ------------------------------------------------------
-  // Boot
-  // ------------------------------------------------------
   useEffect(() => {
     async function boot() {
       setBooting(true);
@@ -357,7 +399,9 @@ export default function PosPage() {
           setStatus("Select a store to begin.");
         }
       } catch (e) {
-        setError(e?.message || "Failed to load POS data. Check connection and try again.");
+        setError(
+          e?.message || "Failed to load POS data. Check connection and try again."
+        );
       } finally {
         setBooting(false);
         focusBarcode();
@@ -368,9 +412,6 @@ export default function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ------------------------------------------------------
-  // Listen for DashboardLayout store changes
-  // ------------------------------------------------------
   useEffect(() => {
     const handler = async (evt) => {
       const sid = String(evt?.detail?.storeId || "").trim();
@@ -391,18 +432,18 @@ export default function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep barcode input focused whenever we unlock the POS
   useEffect(() => {
     if (!locked) focusBarcode();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked]);
 
-  // Keep split allocations sensible when cart total changes
   useEffect(() => {
     if (payMode !== "split") return;
     const totalCents = toCents(cartTotalAmount);
     const allocated = sumCents(allocations);
-    const allZero = (allocations || []).every((a) => (Number(a?.amountCents) || 0) === 0);
+    const allZero = (allocations || []).every(
+      (a) => (Number(a?.amountCents) || 0) === 0
+    );
 
     if (totalCents > 0 && allocated === 0 && allZero) {
       setAllocations((prev) => {
@@ -410,7 +451,9 @@ export default function PosPage() {
           Array.isArray(prev) && prev.length
             ? prev
             : [{ method: "cash", amountCents: 0, reference: "", note: "" }];
-        return base.map((x, i) => (i === 0 ? { ...x, amountCents: totalCents } : x));
+        return base.map((x, i) =>
+          i === 0 ? { ...x, amountCents: totalCents } : x
+        );
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -532,7 +575,8 @@ export default function PosPage() {
 
     for (let i = 0; i < legs.length; i++) {
       const m = String(legs[i]?.method || "").trim().toLowerCase();
-      if (!PAYMENT_METHODS.some((x) => x.value === m)) return `Invalid method on line ${i + 1}.`;
+      if (!PAYMENT_METHODS.some((x) => x.value === m))
+        return `Invalid method on line ${i + 1}.`;
       const amt = clampNonNegInt(legs[i]?.amountCents);
       if (amt <= 0) return `Amount must be > 0 on line ${i + 1}.`;
     }
@@ -553,7 +597,8 @@ export default function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payMode, allocations, cartTotalAmount]);
 
-  const canConfirm = !locked && cartHasItems && (payMode === "single" ? true : !splitValidationMsg);
+  const canConfirm =
+    !locked && cartHasItems && (payMode === "single" ? true : !splitValidationMsg);
 
   const openPreview = () => {
     setPayUiError("");
@@ -593,14 +638,8 @@ export default function PosPage() {
         data = await checkout(singleMethod);
       }
 
-      if (!data) throw new Error("Checkout succeeded but no response payload returned.");
-
-      const total =
-        data.total_amount ??
-        data.subtotal_amount ??
-        cart?.total_amount ??
-        cart?.subtotal_amount ??
-        0;
+      if (!data)
+        throw new Error("Checkout succeeded but no response payload returned.");
 
       const saleId =
         data?.id || data?.sale?.id || data?.sale_id || data?.saleId || null;
@@ -610,7 +649,7 @@ export default function PosPage() {
       await loadCart();
       await reloadProductsForStore(sid);
 
-      setStatus(`Checkout successful • Total: ${formatMoney(total)}`);
+      setStatus(`Checkout successful • Total: ${formatMoney(cartTotalAmount)}`);
       setBarcode("");
       closePayModal();
       focusBarcode();
@@ -667,7 +706,7 @@ export default function PosPage() {
   const itemRows = cartItems;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-2">
           <div>
@@ -679,34 +718,41 @@ export default function PosPage() {
 
           <div className="text-xs text-gray-500">
             Active store:{" "}
-            <span className="font-semibold text-gray-900">{activeStoreId || "— not set —"}</span>
+            <span className="font-semibold text-gray-900">
+              {activeStoreId || "— not set —"}
+            </span>
           </div>
         </div>
 
         <div className="text-right text-sm text-gray-600">
           <div>Products: {products.length}</div>
           <div>
-            Cart items: {cart?.item_count ?? (Array.isArray(cart?.items) ? cart.items.length : 0)}
+            Cart items:{" "}
+            {cart?.item_count ??
+              (Array.isArray(cart?.items) ? cart.items.length : 0)}
           </div>
-          <div className="mt-1 font-medium">Total: {formatMoney(cartTotalAmount)}</div>
+          <div className="mt-1 font-medium">
+            Total: {formatMoney(cartTotalAmount)}
+          </div>
         </div>
       </div>
 
       {(error || status) && (
         <div
           className={`border rounded p-3 text-sm ${
-            error ? "border-red-200 bg-red-50 text-red-800" : "border-green-200 bg-green-50 text-green-800"
+            error
+              ? "border-red-200 bg-red-50 text-red-800"
+              : "border-green-200 bg-green-50 text-green-800"
           }`}
         >
           {error || status}
         </div>
       )}
 
-      {/* Barcode add */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <input
           ref={barcodeRef}
-          className="border px-3 py-2 rounded w-72"
+          className="border px-3 py-2 rounded w-full sm:w-72"
           placeholder="Scan barcode or type SKU…"
           value={barcode}
           disabled={locked || !storeReady}
@@ -717,28 +763,30 @@ export default function PosPage() {
             if (e.key === "Enter") handleBarcodeAdd();
           }}
         />
-        <button
-          disabled={locked || !storeReady}
-          className="bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50"
-          onClick={handleBarcodeAdd}
-        >
-          Add
-        </button>
 
-        <button
-          disabled={locked}
-          className="border px-4 py-2 rounded disabled:opacity-50"
-          onClick={() => {
-            setBarcode("");
-            clearMessages();
-            focusBarcode();
-          }}
-        >
-          Clear
-        </button>
+        <div className="flex gap-2">
+          <button
+            disabled={locked || !storeReady}
+            className="bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50 w-full sm:w-auto"
+            onClick={handleBarcodeAdd}
+          >
+            Add
+          </button>
+
+          <button
+            disabled={locked}
+            className="border px-4 py-2 rounded disabled:opacity-50 w-full sm:w-auto"
+            onClick={() => {
+              setBarcode("");
+              clearMessages();
+              focusBarcode();
+            }}
+          >
+            Clear
+          </button>
+        </div>
       </div>
 
-      {/* Products */}
       <div>
         <h2 className="font-semibold mb-2">Products</h2>
 
@@ -772,7 +820,9 @@ export default function PosPage() {
                   className="text-left border p-4 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <p className="font-medium">{p.name}</p>
-                  <p className="text-sm text-gray-600">{formatMoney(p.unit_price)}</p>
+                  <p className="text-sm text-gray-600">
+                    {formatMoney(p.unit_price)}
+                  </p>
                   <p className="text-xs text-gray-500">SKU: {p.sku}</p>
                   <p className="text-xs text-gray-500">
                     Stock: {p.total_stock} {out ? "• OUT" : ""}
@@ -784,7 +834,6 @@ export default function PosPage() {
         )}
       </div>
 
-      {/* Cart */}
       <div>
         <h2 className="font-semibold mb-2">Cart</h2>
 
@@ -801,7 +850,6 @@ export default function PosPage() {
         )}
       </div>
 
-      {/* Payment Modal */}
       <Modal
         open={payModalOpen}
         title={previewOpen ? "Receipt Preview" : "Payment"}
@@ -811,16 +859,18 @@ export default function PosPage() {
         }}
       >
         {!previewOpen ? (
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
             <div className="rounded-lg border bg-white p-4">
               <p className="text-sm text-gray-600">Amount Due</p>
-              <p className="text-xl font-semibold mt-1">{formatMoney(cartTotalAmount)}</p>
+              <p className="text-xl font-semibold mt-1">
+                {formatMoney(cartTotalAmount)}
+              </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="button"
-                className={`px-4 py-2 rounded border text-sm ${
+                className={`px-4 py-2 rounded border text-sm w-full sm:w-auto ${
                   payMode === "single" ? "bg-gray-900 text-white" : "bg-white"
                 }`}
                 onClick={() => {
@@ -833,7 +883,7 @@ export default function PosPage() {
 
               <button
                 type="button"
-                className={`px-4 py-2 rounded border text-sm ${
+                className={`px-4 py-2 rounded border text-sm w-full sm:w-auto ${
                   payMode === "split" ? "bg-gray-900 text-white" : "bg-white"
                 }`}
                 onClick={() => {
@@ -858,10 +908,10 @@ export default function PosPage() {
             </div>
 
             {payMode === "single" ? (
-              <div className="rounded-lg border bg-white p-4 space-y-2">
+              <div className="rounded-lg border bg-white p-4 space-y-2 min-w-0">
                 <label className="text-xs text-gray-500">Payment Method</label>
                 <select
-                  className="w-full border rounded-md px-3 py-2"
+                  className="w-full border rounded-md px-3 py-2 min-w-0"
                   value={singleMethod}
                   onChange={(e) => setSingleMethod(e.target.value)}
                 >
@@ -871,9 +921,6 @@ export default function PosPage() {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-gray-500 mt-2">
-                  For split payment (cash + transfer + credit etc.), switch to “Split Payment”.
-                </p>
               </div>
             ) : (
               <SplitPaymentEditor
@@ -895,10 +942,10 @@ export default function PosPage() {
               </div>
             )}
 
-            <div className="flex gap-3 justify-end pt-2">
+            <div className="flex flex-col sm:flex-row gap-3 sm:justify-end pt-2">
               <button
                 type="button"
-                className="px-4 py-2 rounded border"
+                className="px-4 py-2 rounded border w-full sm:w-auto"
                 onClick={() => {
                   if (locked) return;
                   closePayModal();
@@ -910,25 +957,32 @@ export default function PosPage() {
 
               <button
                 type="button"
-                className="px-5 py-2 rounded bg-gray-900 text-white disabled:opacity-50"
+                className="px-5 py-2 rounded bg-gray-900 text-white disabled:opacity-50 w-full sm:w-auto"
                 onClick={openPreview}
                 disabled={!canConfirm}
-                title={payMode === "split" && splitValidationMsg ? "Fix split amounts to match total" : undefined}
+                title={
+                  payMode === "split" && splitValidationMsg
+                    ? "Fix split amounts to match total"
+                    : undefined
+                }
               >
                 Preview Receipt
               </button>
             </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
             <div className="rounded-lg border bg-white p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-gray-600">Total</p>
-                <p className="text-lg font-semibold">{formatMoney(cartTotalAmount)}</p>
+                <p className="text-lg font-semibold">
+                  {formatMoney(cartTotalAmount)}
+                </p>
               </div>
               <div className="mt-2 text-xs text-gray-500">
                 Store: {activeStoreId || "—"} • Items:{" "}
-                {cart?.item_count ?? (Array.isArray(cart?.items) ? cart.items.length : 0)}
+                {cart?.item_count ??
+                  (Array.isArray(cart?.items) ? cart.items.length : 0)}
               </div>
             </div>
 
@@ -958,7 +1012,9 @@ export default function PosPage() {
                       it?.total_amount ??
                       Number(unit || 0) * qty;
 
-                    const key = it?.id ?? `${it?.product_id ?? it?.product?.id ?? "x"}-${idx}`;
+                    const key =
+                      it?.id ??
+                      `${it?.product_id ?? it?.product?.id ?? "x"}-${idx}`;
 
                     return (
                       <div key={key} className="flex items-start justify-between gap-3">
@@ -968,7 +1024,9 @@ export default function PosPage() {
                             {qty} × {formatMoney(unit)}
                           </p>
                         </div>
-                        <div className="text-sm font-medium">{formatMoney(lineTotal)}</div>
+                        <div className="text-sm font-medium">
+                          {formatMoney(lineTotal)}
+                        </div>
                       </div>
                     );
                   })}
@@ -980,19 +1038,24 @@ export default function PosPage() {
               <p className="text-sm font-semibold mb-3">Payment</p>
 
               {payMode === "single" ? (
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <p className="text-sm text-gray-600">Method</p>
                   <p className="text-sm font-medium">
-                    {PAYMENT_METHODS.find((x) => x.value === singleMethod)?.label || singleMethod}
+                    {PAYMENT_METHODS.find((x) => x.value === singleMethod)?.label ||
+                      singleMethod}
                   </p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {(previewAllocations || []).map((a, idx) => (
-                    <div key={idx} className="rounded-md border p-3 flex items-start justify-between gap-3">
+                    <div
+                      key={idx}
+                      className="rounded-md border p-3 flex items-start justify-between gap-3"
+                    >
                       <div className="min-w-0">
                         <p className="text-sm font-medium">
-                          {PAYMENT_METHODS.find((x) => x.value === a.method)?.label || a.method}
+                          {PAYMENT_METHODS.find((x) => x.value === a.method)?.label ||
+                            a.method}
                         </p>
                         {(a.reference || a.note) && (
                           <p className="text-xs text-gray-500 truncate">
@@ -1002,7 +1065,9 @@ export default function PosPage() {
                           </p>
                         )}
                       </div>
-                      <div className="text-sm font-semibold">{formatMoney(a.amount)}</div>
+                      <div className="text-sm font-semibold">
+                        {formatMoney(a.amount)}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1015,10 +1080,10 @@ export default function PosPage() {
               </div>
             )}
 
-            <div className="flex flex-wrap gap-3 justify-end pt-2">
+            <div className="flex flex-col sm:flex-row gap-3 sm:justify-end pt-2">
               <button
                 type="button"
-                className="px-4 py-2 rounded border"
+                className="px-4 py-2 rounded border w-full sm:w-auto"
                 onClick={() => {
                   if (locked) return;
                   setPreviewOpen(false);
@@ -1030,7 +1095,7 @@ export default function PosPage() {
 
               <button
                 type="button"
-                className="px-5 py-2 rounded bg-green-600 text-white disabled:opacity-50"
+                className="px-5 py-2 rounded bg-green-600 text-white disabled:opacity-50 w-full sm:w-auto"
                 onClick={performCheckout}
                 disabled={!canConfirm}
               >
