@@ -2,20 +2,18 @@
 
 /**
  * ======================================================
- * PATH: src/pages/InventoryPage.jsx
- * ======================================================
- *
  * INVENTORY PAGE (STAFF)
+ * ======================================================
  *
  * Fix:
  * - ✅ React Hooks order bug fixed (minified error #310 / "Rendered more hooks..."):
  *   All hooks are now called unconditionally before any conditional return.
  *
- * Upgrade (Category inline create):
- * - ✅ Add "New category" inline input + Create button inside Add Product modal
- * - ✅ Uses createCategory() API
- * - ✅ Refreshes categories + auto-selects newly created category
- * - ✅ Respects backend permissions (admin-only by default; shows error if forbidden)
+ * Upgrade (HOTSPRINT):
+ * - ✅ Category creation UX now matches Django Admin style:
+ *   Category dropdown + (+) button opens a proper "Add Category" modal.
+ * - ✅ Removed the "admin only" feel — backend policy should allow anyone with
+ *   inventory/product edit rights to create categories.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -24,11 +22,11 @@ import { useNavigate } from "react-router-dom";
 
 import {
   fetchCategories,
+  createCategory,
   fetchProducts,
   createProduct,
   intakeStockBatch,
   resolveStoreId,
-  createCategory,
 } from "../features/pos/pos.api";
 
 import { fetchExpiringSoon } from "../features/inventory/inventory.api";
@@ -164,7 +162,7 @@ function sortProducts(items, sortKey) {
   }
 }
 
-function Modal({ open, title, children, onClose }) {
+function Modal({ open, title, children, onClose, maxWidth = "max-w-2xl" }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50">
@@ -174,7 +172,7 @@ function Modal({ open, title, children, onClose }) {
         aria-hidden="true"
       />
       <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="w-full max-w-2xl rounded-xl bg-white shadow-lg border">
+        <div className={`w-full ${maxWidth} rounded-xl bg-white shadow-lg border`}>
           <div className="flex items-center justify-between px-5 py-4 border-b">
             <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
             <button
@@ -243,10 +241,8 @@ function normalizeExpiring(data) {
 export default function InventoryPage() {
   const navigate = useNavigate();
 
-  // IMPORTANT: store id must be reactive (store selector lives in layout)
   const [activeStoreId, setActiveStoreId] = useState(() => resolveStoreId());
 
-  // Listen to "active-store-changed" broadcast from layout StoreSelector
   useEffect(() => {
     const handler = (evt) => {
       const storeId = String(evt?.detail?.storeId || "").trim() || null;
@@ -254,8 +250,6 @@ export default function InventoryPage() {
     };
 
     window.addEventListener("active-store-changed", handler);
-
-    // Also sync once on mount in case localStorage changed before page mounted
     setActiveStoreId(resolveStoreId());
 
     return () => window.removeEventListener("active-store-changed", handler);
@@ -280,7 +274,8 @@ export default function InventoryPage() {
     is_active: true,
   });
 
-  // Category inline-create state
+  // Category modal (Django-admin style)
+  const [catModalOpen, setCatModalOpen] = useState(false);
   const [catName, setCatName] = useState("");
   const [catSaving, setCatSaving] = useState(false);
   const [catErr, setCatErr] = useState("");
@@ -330,10 +325,9 @@ export default function InventoryPage() {
     queryFn: fetchCategories,
     retry: 1,
     refetchOnWindowFocus: false,
-    enabled: addOpen,
+    enabled: addOpen || catModalOpen, // ensure modal can load categories too
   });
 
-  // ✅ Expiry alerts summary (quick preview)
   const EXPIRY_DAYS = 30;
 
   const expiryQuery = useQuery({
@@ -387,7 +381,6 @@ export default function InventoryPage() {
     return sortProducts(list, sortKey);
   }, [products, query, onlyActive, onlyLowStock, sortKey]);
 
-  // ✅ IMPORTANT: compute these with hooks BEFORE any conditional return
   const expRows = useMemo(
     () => normalizeExpiring(expiryQuery.data),
     [expiryQuery.data]
@@ -410,9 +403,9 @@ export default function InventoryPage() {
 
   const openAdd = () => {
     setAddErr("");
-    setCatErr("");
+    setCatModalOpen(false);
     setCatName("");
-    setCatSaving(false);
+    setCatErr("");
     setForm({
       sku: "",
       name: "",
@@ -428,8 +421,9 @@ export default function InventoryPage() {
     if (saving || catSaving) return;
     setAddOpen(false);
     setAddErr("");
-    setCatErr("");
+    setCatModalOpen(false);
     setCatName("");
+    setCatErr("");
   };
 
   const onChange = (patch) => setForm((prev) => ({ ...prev, ...patch }));
@@ -484,34 +478,48 @@ export default function InventoryPage() {
     }
   };
 
-  // -----------------------------
-  // Category inline create (admin only by default)
-  // -----------------------------
-  const submitNewCategory = async () => {
+  const openCategoryModal = async () => {
+    setCatErr("");
+    setCatName("");
+    setCatModalOpen(true);
+    // best effort refresh so you see the latest list after creating
+    try {
+      await refetchCategories();
+    } catch {
+      // ignore
+    }
+  };
+
+  const closeCategoryModal = () => {
+    if (catSaving) return;
+    setCatModalOpen(false);
+    setCatErr("");
+    setCatName("");
+  };
+
+  const submitCreateCategory = async () => {
     setCatErr("");
     const name = String(catName || "").trim();
-    if (!name) return setCatErr("Enter a category name.");
+    if (!name) return setCatErr("Category name is required.");
 
     try {
       setCatSaving(true);
       const created = await createCategory({ name });
 
-      // Refresh list, then select it
+      // refresh list and auto-select new category
       await refetchCategories();
-      const newId = created?.id ? String(created.id) : "";
+      onChange({ category: String(created?.id || "") });
 
-      if (newId) {
-        onChange({ category: newId });
-      } else {
-        // fallback: try to match by name after refetch
-        const lower = name.toLowerCase();
-        const match = categories.find((c) => String(c.name || "").toLowerCase() === lower);
-        if (match?.id) onChange({ category: String(match.id) });
-      }
-
+      setCatModalOpen(false);
       setCatName("");
     } catch (e) {
-      setCatErr(e?.message || "Failed to create category.");
+      const msg = e?.message || "Failed to create category.";
+      // Nice hint for 403
+      if (String(msg).toLowerCase().includes("permission")) {
+        setCatErr("You don’t have permission to create categories.");
+      } else {
+        setCatErr(msg);
+      }
     } finally {
       setCatSaving(false);
     }
@@ -546,8 +554,7 @@ export default function InventoryPage() {
     setIntakeErr("");
   };
 
-  const onIntakeChange = (patch) =>
-    setIntakeForm((prev) => ({ ...prev, ...patch }));
+  const onIntakeChange = (patch) => setIntakeForm((prev) => ({ ...prev, ...patch }));
 
   const submitIntake = async () => {
     setIntakeErr("");
@@ -598,9 +605,7 @@ export default function InventoryPage() {
   if (!activeStoreId) {
     return (
       <div className="rounded-lg border bg-white p-4">
-        <p className="text-sm font-medium text-gray-800">
-          No active store selected
-        </p>
+        <p className="text-sm font-medium text-gray-800">No active store selected</p>
         <p className="text-sm text-gray-600 mt-1">
           Use the Store selector in the top bar to choose an active store.
         </p>
@@ -614,9 +619,7 @@ export default function InventoryPage() {
     const message = getErrorMessage(error, "Failed to load products.");
     return (
       <div className="rounded-lg border bg-white p-4">
-        <p className="text-sm font-medium text-gray-800">
-          Couldn’t load inventory
-        </p>
+        <p className="text-sm font-medium text-gray-800">Couldn’t load inventory</p>
         <p className="text-sm text-gray-600 mt-1">{message}</p>
 
         <button
@@ -692,283 +695,6 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* ✅ Expiry alerts preview panel */}
-      <div className="rounded-xl border bg-white p-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <p className="text-sm font-semibold text-gray-900">Expiry Alerts</p>
-            <p className="text-xs text-gray-600 mt-0.5">
-              Active batches expiring within {EXPIRY_DAYS} day(s)
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {expiryQuery.isError ? (
-              <Badge tone="red">Failed</Badge>
-            ) : expCount > 0 ? (
-              <Badge tone="amber">{expCount} batch(es)</Badge>
-            ) : (
-              <Badge tone="green">None</Badge>
-            )}
-
-            <button
-              type="button"
-              onClick={() => expiryQuery.refetch()}
-              className="inline-flex items-center rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
-              disabled={expiryQuery.isFetching}
-              title="Refresh expiry preview"
-            >
-              {expiryQuery.isFetching ? "Refreshing…" : "Refresh"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate("/inventory/expiry-alerts")}
-              className="inline-flex items-center rounded-lg bg-gray-900 text-white px-3 py-2 text-xs hover:bg-gray-800"
-            >
-              Open
-            </button>
-          </div>
-        </div>
-
-        {expiryQuery.isError ? (
-          <div className="mt-3 text-xs text-red-700">
-            {getErrorMessage(
-              expiryQuery.error,
-              "Failed to load expiry alerts preview."
-            )}
-          </div>
-        ) : expiryQuery.isLoading ? (
-          <div className="mt-3 text-sm text-gray-600">Loading expiry alerts…</div>
-        ) : expTop.length === 0 ? (
-          <div className="mt-3 text-sm text-gray-600">
-            No active batches expiring within {EXPIRY_DAYS} day(s).
-          </div>
-        ) : (
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {expTop.map((b) => {
-              const dl = daysLeft(b.expiryDate);
-              const label =
-                dl === null ? "Unknown" : dl < 0 ? "Expired" : `${dl} day(s)`;
-              const tone = dl !== null && dl <= 7 ? "red" : "amber";
-
-              return (
-                <div key={b.id} className="rounded-lg border p-3 bg-amber-50/40">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {b.productName}
-                      </div>
-                      <div className="text-xs text-gray-600 mt-0.5">
-                        Batch: {b.batchNumber}
-                      </div>
-                    </div>
-                    <Badge tone={tone}>{label}</Badge>
-                  </div>
-
-                  <div className="mt-2 text-xs text-gray-700">
-                    Expiry:{" "}
-                    <span className="font-medium">{formatDate(b.expiryDate)}</span>
-                  </div>
-                  <div className="mt-1 text-xs text-gray-700">
-                    Qty remaining:{" "}
-                    <span className="font-medium">{b.qtyRemaining}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Low-stock panel */}
-      {stats.lowStock > 0 && (
-        <div className="rounded-xl border bg-white p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-gray-900">
-                Low Stock Attention
-              </p>
-              <p className="text-xs text-gray-600 mt-0.5">
-                Top items with the lowest remaining stock (active products only)
-              </p>
-            </div>
-            <Badge tone="red">{stats.lowStock} item(s)</Badge>
-          </div>
-
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {stats.lowStockTop.map((p) => (
-              <div key={p.id} className="rounded-lg border p-3 bg-red-50/40">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900">
-                      {p.name}
-                    </div>
-                    <div className="text-xs text-gray-600 mt-0.5">
-                      SKU: {p.sku}
-                    </div>
-                  </div>
-                  <Badge tone="red">Low</Badge>
-                </div>
-
-                <div className="mt-2 text-sm text-gray-800">
-                  Stock: <span className="font-semibold">{p.stock}</span>
-                  {p.threshold !== null ? (
-                    <span className="text-gray-600"> / Thresh: {p.threshold}</span>
-                  ) : null}
-                </div>
-
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => openIntake(p.id)}
-                    className="inline-flex items-center rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
-                  >
-                    Intake
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Controls */}
-      <div className="rounded-xl border bg-white p-4">
-        <div className="flex flex-col md:flex-row md:items-center gap-3">
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              Search (SKU or name)
-            </label>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g. PARACETAMOL or SKU123"
-              className="h-10 w-full rounded-lg border px-3 text-sm"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="mt-5 md:mt-0">
-              <Toggle
-                checked={onlyActive}
-                onChange={setOnlyActive}
-                label="Active only"
-              />
-            </div>
-            <div className="mt-5 md:mt-0">
-              <Toggle
-                checked={onlyLowStock}
-                onChange={setOnlyLowStock}
-                label="Low stock only"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Sort
-              </label>
-              <SortSelect value={sortKey} onChange={setSortKey} />
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-3 text-xs text-gray-600">
-          Showing{" "}
-          <span className="font-semibold text-gray-900">{filtered.length}</span>{" "}
-          result(s)
-        </div>
-      </div>
-
-      {/* Table */}
-      {filtered.length === 0 ? (
-        <p className="text-gray-600">No matching products found</p>
-      ) : (
-        <div className="overflow-auto rounded-lg border bg-white">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-gray-50">
-                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
-                  SKU
-                </th>
-                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
-                  Name
-                </th>
-                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
-                  Price
-                </th>
-                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
-                  Stock
-                </th>
-                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
-                  Status
-                </th>
-                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filtered.map((product) => {
-                const rowTint = product.isActive
-                  ? product.isLowStock
-                    ? "bg-red-50"
-                    : "bg-white"
-                  : "bg-gray-50 opacity-70";
-
-                return (
-                  <tr key={product.id} className={rowTint}>
-                    <td className="border-b p-2 text-sm text-gray-700">
-                      {product.sku}
-                    </td>
-                    <td className="border-b p-2">
-                      <div className="font-medium text-gray-900">
-                        {product.name}
-                      </div>
-                      {product.threshold !== null && (
-                        <div className="text-xs text-gray-500">
-                          Threshold: {product.threshold}
-                        </div>
-                      )}
-                      {product.category_name ? (
-                        <div className="text-xs text-gray-500">
-                          Category: {product.category_name}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="border-b p-2 text-sm text-gray-700">
-                      {formatOptionalMoney(product.price)}
-                    </td>
-                    <td className="border-b p-2 text-sm text-gray-700">
-                      {product.stock}
-                    </td>
-                    <td className="border-b p-2">
-                      {!product.isActive ? (
-                        <Badge tone="gray">Inactive</Badge>
-                      ) : product.isLowStock ? (
-                        <Badge tone="red">Low stock</Badge>
-                      ) : (
-                        <Badge tone="green">OK</Badge>
-                      )}
-                    </td>
-                    <td className="border-b p-2">
-                      <button
-                        type="button"
-                        onClick={() => openIntake(product.id)}
-                        className="inline-flex items-center rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
-                      >
-                        Intake
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       {/* Add Product Modal */}
       <Modal
         open={addOpen}
@@ -1040,7 +766,7 @@ export default function InventoryPage() {
                 Category
               </label>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
                 <select
                   value={form.category}
                   onChange={(e) => onChange({ category: e.target.value })}
@@ -1056,50 +782,33 @@ export default function InventoryPage() {
 
                 <button
                   type="button"
-                  className="h-10 rounded-lg border px-3 text-sm hover:bg-gray-50"
+                  className="h-10 w-10 rounded-lg border text-sm hover:bg-gray-50 flex items-center justify-center"
                   onClick={() => refetchCategories()}
-                  disabled={categoriesLoading || catSaving}
+                  disabled={categoriesLoading}
                   title="Reload categories"
+                  aria-label="Reload categories"
                 >
                   {categoriesLoading ? "…" : "↻"}
                 </button>
-              </div>
 
-              {/* Inline create */}
-              <div className="mt-2 flex flex-col sm:flex-row gap-2">
-                <input
-                  value={catName}
-                  onChange={(e) => setCatName(e.target.value)}
-                  className="h-10 w-full rounded-lg border px-3 text-sm"
-                  placeholder="New category name (admin only)"
-                  disabled={catSaving}
-                />
-
+                {/* Django-admin style: + icon beside select */}
                 <button
                   type="button"
-                  className="h-10 rounded-lg bg-gray-900 text-white px-4 text-sm hover:bg-gray-800 disabled:opacity-50"
-                  onClick={submitNewCategory}
-                  disabled={catSaving || !String(catName || "").trim()}
-                  title="Create category"
+                  className="h-10 w-10 rounded-lg bg-gray-900 text-white text-lg hover:bg-gray-800 flex items-center justify-center disabled:opacity-50"
+                  onClick={openCategoryModal}
+                  disabled={catSaving}
+                  title="Add category"
+                  aria-label="Add category"
                 >
-                  {catSaving ? "Creating…" : "+ Add"}
+                  +
                 </button>
               </div>
-
-              {catErr && (
-                <div className="mt-2 text-xs text-red-700">{catErr}</div>
-              )}
 
               {categoriesError && (
                 <div className="mt-2 text-xs text-red-700">
                   {getErrorMessage(categoriesErrObj, "Failed to load categories.")}
                 </div>
               )}
-
-              <div className="mt-1 text-[11px] text-gray-500">
-                Note: Creating categories may require admin permission. If you get 403,
-                ask an admin to create it or enable allowed groups on the backend.
-              </div>
             </div>
 
             <div className="md:col-span-2 flex items-center gap-2">
@@ -1146,7 +855,320 @@ export default function InventoryPage() {
         </div>
       </Modal>
 
-      {/* Stock Intake Modal */}
+      {/* Add Category Modal (Django-admin style) */}
+      <Modal
+        open={catModalOpen}
+        title="Add Category"
+        maxWidth="max-w-lg"
+        onClose={closeCategoryModal}
+      >
+        <div className="space-y-3">
+          <div className="text-sm text-gray-700">
+            Create a new category, then it will be auto-selected in the product form.
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Name
+            </label>
+            <input
+              value={catName}
+              onChange={(e) => setCatName(e.target.value)}
+              className="h-10 w-full rounded-lg border px-3 text-sm"
+              placeholder="e.g. Antibiotics"
+              autoFocus
+            />
+          </div>
+
+          {catErr && (
+            <div className="border rounded p-3 text-sm border-red-200 bg-red-50 text-red-800">
+              {catErr}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              className="px-4 py-2 rounded border hover:bg-gray-50 disabled:opacity-50"
+              onClick={closeCategoryModal}
+              disabled={catSaving}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="px-5 py-2 rounded bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+              onClick={submitCreateCategory}
+              disabled={catSaving}
+            >
+              {catSaving ? "Saving…" : "Save"}
+            </button>
+          </div>
+
+          <div className="text-xs text-gray-500">
+            If you get a permission error, your role may not have inventory edit rights.
+          </div>
+        </div>
+      </Modal>
+
+      {/* ✅ Expiry alerts preview panel */}
+      <div className="rounded-xl border bg-white p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Expiry Alerts</p>
+            <p className="text-xs text-gray-600 mt-0.5">
+              Active batches expiring within {EXPIRY_DAYS} day(s)
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {expiryQuery.isError ? (
+              <Badge tone="red">Failed</Badge>
+            ) : expCount > 0 ? (
+              <Badge tone="amber">{expCount} batch(es)</Badge>
+            ) : (
+              <Badge tone="green">None</Badge>
+            )}
+
+            <button
+              type="button"
+              onClick={() => expiryQuery.refetch()}
+              className="inline-flex items-center rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
+              disabled={expiryQuery.isFetching}
+              title="Refresh expiry preview"
+            >
+              {expiryQuery.isFetching ? "Refreshing…" : "Refresh"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate("/inventory/expiry-alerts")}
+              className="inline-flex items-center rounded-lg bg-gray-900 text-white px-3 py-2 text-xs hover:bg-gray-800"
+            >
+              Open
+            </button>
+          </div>
+        </div>
+
+        {expiryQuery.isError ? (
+          <div className="mt-3 text-xs text-red-700">
+            {getErrorMessage(
+              expiryQuery.error,
+              "Failed to load expiry alerts preview."
+            )}
+          </div>
+        ) : expiryQuery.isLoading ? (
+          <div className="mt-3 text-sm text-gray-600">Loading expiry alerts…</div>
+        ) : expTop.length === 0 ? (
+          <div className="mt-3 text-sm text-gray-600">
+            No active batches expiring within {EXPIRY_DAYS} day(s).
+          </div>
+        ) : (
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {expTop.map((b) => {
+              const dl = daysLeft(b.expiryDate);
+              const label = dl === null ? "Unknown" : dl < 0 ? "Expired" : `${dl} day(s)`;
+              const tone = dl !== null && dl <= 7 ? "red" : "amber";
+
+              return (
+                <div key={b.id} className="rounded-lg border p-3 bg-amber-50/40">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {b.productName}
+                      </div>
+                      <div className="text-xs text-gray-600 mt-0.5">
+                        Batch: {b.batchNumber}
+                      </div>
+                    </div>
+                    <Badge tone={tone}>{label}</Badge>
+                  </div>
+
+                  <div className="mt-2 text-xs text-gray-700">
+                    Expiry: <span className="font-medium">{formatDate(b.expiryDate)}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-gray-700">
+                    Qty remaining: <span className="font-medium">{b.qtyRemaining}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Low-stock panel */}
+      {stats.lowStock > 0 && (
+        <div className="rounded-xl border bg-white p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Low Stock Attention</p>
+              <p className="text-xs text-gray-600 mt-0.5">
+                Top items with the lowest remaining stock (active products only)
+              </p>
+            </div>
+            <Badge tone="red">{stats.lowStock} item(s)</Badge>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {stats.lowStockTop.map((p) => (
+              <div key={p.id} className="rounded-lg border p-3 bg-red-50/40">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">{p.name}</div>
+                    <div className="text-xs text-gray-600 mt-0.5">SKU: {p.sku}</div>
+                  </div>
+                  <Badge tone="red">Low</Badge>
+                </div>
+
+                <div className="mt-2 text-sm text-gray-800">
+                  Stock: <span className="font-semibold">{p.stock}</span>
+                  {p.threshold !== null ? (
+                    <span className="text-gray-600"> / Thresh: {p.threshold}</span>
+                  ) : null}
+                </div>
+
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => openIntake(p.id)}
+                    className="inline-flex items-center rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
+                  >
+                    Intake
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="rounded-xl border bg-white p-4">
+        <div className="flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Search (SKU or name)
+            </label>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="e.g. PARACETAMOL or SKU123"
+              className="h-10 w-full rounded-lg border px-3 text-sm"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="mt-5 md:mt-0">
+              <Toggle checked={onlyActive} onChange={setOnlyActive} label="Active only" />
+            </div>
+            <div className="mt-5 md:mt-0">
+              <Toggle
+                checked={onlyLowStock}
+                onChange={setOnlyLowStock}
+                label="Low stock only"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Sort
+              </label>
+              <SortSelect value={sortKey} onChange={setSortKey} />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 text-xs text-gray-600">
+          Showing <span className="font-semibold text-gray-900">{filtered.length}</span>{" "}
+          result(s)
+        </div>
+      </div>
+
+      {/* Table */}
+      {filtered.length === 0 ? (
+        <p className="text-gray-600">No matching products found</p>
+      ) : (
+        <div className="overflow-auto rounded-lg border bg-white">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
+                  SKU
+                </th>
+                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
+                  Name
+                </th>
+                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
+                  Price
+                </th>
+                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
+                  Stock
+                </th>
+                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
+                  Status
+                </th>
+                <th className="border-b p-2 text-left text-sm font-semibold text-gray-700">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {filtered.map((product) => {
+                const rowTint = product.isActive
+                  ? product.isLowStock
+                    ? "bg-red-50"
+                    : "bg-white"
+                  : "bg-gray-50 opacity-70";
+
+                return (
+                  <tr key={product.id} className={rowTint}>
+                    <td className="border-b p-2 text-sm text-gray-700">{product.sku}</td>
+                    <td className="border-b p-2">
+                      <div className="font-medium text-gray-900">{product.name}</div>
+                      {product.threshold !== null && (
+                        <div className="text-xs text-gray-500">
+                          Threshold: {product.threshold}
+                        </div>
+                      )}
+                      {product.category_name ? (
+                        <div className="text-xs text-gray-500">
+                          Category: {product.category_name}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="border-b p-2 text-sm text-gray-700">
+                      {formatOptionalMoney(product.price)}
+                    </td>
+                    <td className="border-b p-2 text-sm text-gray-700">{product.stock}</td>
+                    <td className="border-b p-2">
+                      {!product.isActive ? (
+                        <Badge tone="gray">Inactive</Badge>
+                      ) : product.isLowStock ? (
+                        <Badge tone="red">Low stock</Badge>
+                      ) : (
+                        <Badge tone="green">OK</Badge>
+                      )}
+                    </td>
+                    <td className="border-b p-2">
+                      <button
+                        type="button"
+                        onClick={() => openIntake(product.id)}
+                        className="inline-flex items-center rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
+                      >
+                        Intake
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Stock Intake Modal (unchanged) */}
       <Modal
         open={intakeOpen}
         title="Stock Intake (Purchase Receipt)"
@@ -1189,9 +1211,7 @@ export default function InventoryPage() {
               </label>
               <input
                 value={intakeForm.quantity_received}
-                onChange={(e) =>
-                  onIntakeChange({ quantity_received: e.target.value })
-                }
+                onChange={(e) => onIntakeChange({ quantity_received: e.target.value })}
                 className="h-10 w-full rounded-lg border px-3 text-sm"
                 inputMode="numeric"
                 placeholder="e.g. 50"

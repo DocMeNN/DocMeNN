@@ -1,3 +1,4 @@
+// src/features/pos/pos.api.js
 /**
  * ======================================================
  * PATH: src/features/pos/pos.api.js
@@ -12,22 +13,13 @@
  * - GET  /products/products/ (store_id optional but recommended)
  * - POST /products/products/ (create product)
  * - GET  /products/categories/ (category list)
- * - POST /products/categories/ (create category)
+ * - POST /products/categories/ (category create) ✅
  * - POST /products/stock-batches/ (purchase-led stock intake => creates batch + receipt movement)
  * - GET  /products/stock-batches/ (list, filters: store_id, product_id)
  *
  * Public endpoints (AllowAny):
  * - GET  /store/stores/public/
  * - GET  /products/products/public/?store_id=&q=
- *
- * Legacy V1 (unsafe for card payments):
- * - POST /public/checkout/
- * - GET  /public/receipt/<sale_id>/
- *
- * Phase 4 (Paystack-safe):
- * - POST /public/order/initiate/
- * - GET  /public/order/<order_id>/
- * - POST /public/payments/paystack/webhook/
  * ======================================================
  */
 
@@ -208,7 +200,7 @@ export async function fetchCategories() {
 export async function createCategory({ name } = {}) {
   try {
     const n = String(name || "").trim();
-    if (!n) throw new Error("Category name is required.");
+    if (!n) throw new Error("name is required.");
 
     const res = await axiosClient.post("/products/categories/", { name: n });
 
@@ -216,7 +208,7 @@ export async function createCategory({ name } = {}) {
       throw new Error("Categories API: Invalid create response");
     }
 
-    return res.data; // expects {id, name, ...}
+    return res.data;
   } catch (err) {
     throw new Error(extractErrorMessage(err, "Failed to create category."));
   }
