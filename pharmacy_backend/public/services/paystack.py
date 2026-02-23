@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -14,13 +15,49 @@ from django.conf import settings
 PAYSTACK_BASE = "https://api.paystack.co"
 
 
+def _paystack_cfg() -> dict:
+    """
+    Best-effort config resolver.
+
+    Priority:
+    1) settings.PAYMENTS["PAYSTACK"] (your intended design)
+    2) direct env vars as fallback (PAYSTACK_SECRET_KEY / PAYSTACK_PUBLIC_KEY)
+       This prevents "works locally but fails on Render" when PAYMENTS mapping is off.
+    """
+    payments = getattr(settings, "PAYMENTS", {}) or {}
+    cfg = (payments.get("PAYSTACK") or {}) if isinstance(payments, dict) else {}
+    if isinstance(cfg, dict):
+        return cfg
+
+    # If PAYMENTS exists but not in expected shape, hard-fall back to env
+    return {}
+
+
 def _get_secret_key() -> str:
-    cfg = (getattr(settings, "PAYMENTS", {}) or {}).get("PAYSTACK", {}) or {}
+    cfg = _paystack_cfg()
+
     sk = (cfg.get("SECRET_KEY") or "").strip()
+
+    # Fallback: read from environment directly (Render uses env vars)
+    if not sk:
+        sk = (os.environ.get("PAYSTACK_SECRET_KEY") or "").strip()
+
     if not sk:
         raise RuntimeError(
-            "PAYSTACK SECRET_KEY is not configured (settings.PAYMENTS['PAYSTACK']['SECRET_KEY'])"
+            "PAYSTACK SECRET_KEY is not configured. "
+            "Expected settings.PAYMENTS['PAYSTACK']['SECRET_KEY'] or env PAYSTACK_SECRET_KEY."
         )
+
+    # ---- SAFE DIAGNOSTIC (NO SECRET LEAK) ----
+    # Helps us confirm production is using the expected key value.
+    # Remove after confirmation.
+    try:
+        fp = hashlib.sha256(sk.encode("utf-8")).hexdigest()[:12]
+        print(f"PAYSTACK_SECRET_KEY_FINGERPRINT={fp} len={len(sk)} prefix={sk[:8]}")
+    except Exception:
+        # never break payment flow because of diagnostics
+        pass
+
     return sk
 
 
