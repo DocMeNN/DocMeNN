@@ -1,22 +1,6 @@
-# public/views/paystack_callback.py
-"""
-PAYSTACK CALLBACK VIEW
-
-Purpose:
-- Handles Paystack browser redirect after payment
-- Reads reference from query params
-- Looks up PaymentAttempt
-- Redirects frontend to:
-    /store/<store_id>/order/<order_id>
-
-Security hardening:
-- FRONTEND_BASE_URL comes from settings (env-driven)
-- In production, should be https://your-frontend-domain
-- Avoid hardcoding localhost
-"""
-
 from __future__ import annotations
 
+import logging
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -26,6 +10,8 @@ from rest_framework.views import APIView
 
 from sales.models import PaymentAttempt
 
+logger = logging.getLogger(__name__)
+
 
 def _safe_frontend_base() -> str:
     base = (getattr(settings, "FRONTEND_BASE_URL", "") or "").strip()
@@ -34,7 +20,7 @@ def _safe_frontend_base() -> str:
 
     parsed = urlparse(base)
     if not parsed.scheme or not parsed.netloc:
-        # refuse weird values; fall back to local dev
+        logger.warning("Invalid FRONTEND_BASE_URL detected")
         return "http://localhost:5173"
 
     return base.rstrip("/")
@@ -45,7 +31,9 @@ class PaystackCallbackView(APIView):
 
     def get(self, request, *args, **kwargs):
         reference = request.query_params.get("reference")
+
         if not reference:
+            logger.warning("Callback without reference")
             return redirect(_safe_frontend_base() + "/store")
 
         attempt = (
@@ -55,6 +43,7 @@ class PaystackCallbackView(APIView):
         )
 
         if not attempt or not attempt.order:
+            logger.warning("Callback unknown reference", extra={"reference": reference})
             return redirect(_safe_frontend_base() + "/store")
 
         order = attempt.order
@@ -64,7 +53,10 @@ class PaystackCallbackView(APIView):
         order_id = getattr(order, "id", None)
 
         if not store_id or not order_id:
+            logger.warning("Callback missing store/order id", extra={"reference": reference})
             return redirect(_safe_frontend_base() + "/store")
 
         frontend_base = _safe_frontend_base()
+        logger.info("Callback redirecting to frontend", extra={"reference": reference})
+
         return redirect(f"{frontend_base}/store/{store_id}/order/{order_id}")

@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import os
+import logging
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -12,51 +13,32 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 
+logger = logging.getLogger("payments")
+
 PAYSTACK_BASE = "https://api.paystack.co"
 
 
 def _paystack_cfg() -> dict:
-    """
-    Best-effort config resolver.
-
-    Priority:
-    1) settings.PAYMENTS["PAYSTACK"] (your intended design)
-    2) direct env vars as fallback (PAYSTACK_SECRET_KEY / PAYSTACK_PUBLIC_KEY)
-       This prevents "works locally but fails on Render" when PAYMENTS mapping is off.
-    """
     payments = getattr(settings, "PAYMENTS", {}) or {}
     cfg = (payments.get("PAYSTACK") or {}) if isinstance(payments, dict) else {}
     if isinstance(cfg, dict):
         return cfg
-
-    # If PAYMENTS exists but not in expected shape, hard-fall back to env
     return {}
 
 
 def _get_secret_key() -> str:
     cfg = _paystack_cfg()
-
     sk = (cfg.get("SECRET_KEY") or "").strip()
 
-    # Fallback: read from environment directly (Render uses env vars)
     if not sk:
         sk = (os.environ.get("PAYSTACK_SECRET_KEY") or "").strip()
 
     if not sk:
+        logger.critical("Paystack SECRET_KEY not configured")
         raise RuntimeError(
             "PAYSTACK SECRET_KEY is not configured. "
             "Expected settings.PAYMENTS['PAYSTACK']['SECRET_KEY'] or env PAYSTACK_SECRET_KEY."
         )
-
-    # ---- SAFE DIAGNOSTIC (NO SECRET LEAK) ----
-    # Helps us confirm production is using the expected key value.
-    # Remove after confirmation.
-    try:
-        fp = hashlib.sha256(sk.encode("utf-8")).hexdigest()[:12]
-        print(f"PAYSTACK_SECRET_KEY_FINGERPRINT={fp} len={len(sk)} prefix={sk[:8]}")
-    except Exception:
-        # never break payment flow because of diagnostics
-        pass
 
     return sk
 
@@ -65,7 +47,9 @@ def _to_kobo(amount_naira: Decimal) -> int:
     try:
         naira = Decimal(str(amount_naira))
     except (InvalidOperation, ValueError, TypeError) as exc:
+        logger.error("Invalid amount passed to _to_kobo", extra={"amount": str(amount_naira)})
         raise ValueError("amount_naira must be a valid Decimal") from exc
+
     kobo = (naira * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return int(kobo)
 
@@ -93,6 +77,7 @@ def _request_json(
 ) -> dict[str, Any]:
     sk = _get_secret_key()
     data = None
+
     if body is not None:
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
@@ -103,8 +88,7 @@ def _request_json(
             "Authorization": f"Bearer {sk}",
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (PaystackClient; +https://example.local) Python-urllib",
-            "Accept-Language": "en-US,en;q=0.9",
+            "User-Agent": "PharmacyBackend/1.0",
         },
         method=method,
     )
@@ -118,30 +102,32 @@ def _request_json(
         try:
             raw = e.read().decode("utf-8", errors="replace")
         except Exception:
-            raw = ""
+            pass
+
         parsed_any = _parse_json_or_text(raw)
 
-        if parsed_any.get("kind") == "json":
-            j = parsed_any.get("json") or {}
-            msg = (
-                j.get("message")
-                or j.get("error")
-                or j.get("status")
-                or "Paystack rejected request"
-            )
-            raise RuntimeError(f"Paystack HTTPError: {e.code} {msg}") from e
+        logger.error(
+            "Paystack HTTPError",
+            extra={
+                "status_code": getattr(e, "code", None),
+                "response_preview": _safe_preview(raw),
+            },
+        )
 
-        preview = _safe_preview(parsed_any.get("raw") or str(e))
-        raise RuntimeError(f"Paystack HTTPError: {e.code} {preview}") from e
+        raise RuntimeError(f"Paystack HTTPError: {e.code}") from e
+
     except URLError as e:
+        logger.error("Paystack URLError", extra={"error": str(e)})
         raise RuntimeError(f"Paystack URLError: {e}") from e
-    except Exception as e:
-        raise RuntimeError(f"Paystack request failed: {e}") from e
+
+    except Exception:
+        logger.exception("Unexpected Paystack request failure")
+        raise RuntimeError("Paystack request failed")
 
     if parsed_any.get("kind") != "json":
-        raise RuntimeError(
-            f"Paystack returned non-JSON: {_safe_preview(parsed_any.get('raw') or '')}"
-        )
+        preview = _safe_preview(parsed_any.get("raw") or "")
+        logger.error("Paystack returned non-JSON response", extra={"response_preview": preview})
+        raise RuntimeError("Paystack returned non-JSON response")
 
     return parsed_any.get("json") or {}
 
@@ -166,11 +152,17 @@ def paystack_initialize_transaction(
     if metadata:
         payload["metadata"] = metadata
 
+    logger.info("Initializing Paystack transaction", extra={"reference": reference})
+
     parsed = _request_json(
         "POST", f"{PAYSTACK_BASE}/transaction/initialize", body=payload, timeout=25
     )
 
     if not parsed.get("status"):
+        logger.error(
+            "Paystack initialization rejected",
+            extra={"reference": reference, "message": parsed.get("message")},
+        )
         raise RuntimeError(parsed.get("message") or "Paystack init rejected")
 
     return parsed.get("data") or {}
@@ -178,15 +170,24 @@ def paystack_initialize_transaction(
 
 def verify_paystack_signature(*, raw_body: bytes, signature: str | None) -> bool:
     if not signature:
+        logger.warning("Paystack webhook received without signature")
         return False
+
     sk = _get_secret_key().encode("utf-8")
     computed = hmac.new(sk, raw_body or b"", hashlib.sha512).hexdigest()
-    return hmac.compare_digest(computed, str(signature).strip())
+
+    valid = hmac.compare_digest(computed, str(signature).strip())
+    if not valid:
+        logger.warning("Invalid Paystack signature received")
+
+    return valid
 
 
 def verify_paystack_transaction(*, reference: str) -> dict:
     ref = str(reference or "").strip()
+
     if not ref:
+        logger.warning("Paystack verification called with empty reference")
         return {
             "ok": False,
             "status": "",
@@ -195,6 +196,8 @@ def verify_paystack_transaction(*, reference: str) -> dict:
             "reference": "",
             "raw": {},
         }
+
+    logger.info("Verifying Paystack transaction", extra={"reference": ref})
 
     raw = _request_json(
         "GET", f"{PAYSTACK_BASE}/transaction/verify/{ref}", body=None, timeout=25
@@ -205,12 +208,20 @@ def verify_paystack_transaction(*, reference: str) -> dict:
 
     tx_status = str(data.get("status") or "").strip().lower()
     amount = data.get("amount")
+
     try:
         amount_int = int(amount) if amount is not None else None
     except Exception:
         amount_int = None
 
     currency = data.get("currency")
+
+    if not ok or tx_status != "success":
+        logger.warning(
+            "Paystack verification not successful",
+            extra={"reference": ref, "status": tx_status},
+        )
+
     return {
         "ok": ok,
         "status": tx_status,

@@ -1,6 +1,7 @@
 # purchases/services/payment_service.py
 
 from decimal import ROUND_HALF_UP, Decimal
+import logging
 
 from django.db import transaction
 from django.utils import timezone
@@ -21,6 +22,9 @@ from accounting.services.posting import post_supplier_payment_to_ledger
 from purchases.models import PurchaseInvoice, Supplier, SupplierPayment
 
 
+logger = logging.getLogger("payments")
+
+
 class SupplierPaymentError(ValueError):
     pass
 
@@ -36,15 +40,24 @@ def _resolve_account_by_code(*, code: str) -> Account:
     chart = get_active_chart()
     code = (code or "").strip()
     if not code:
+        logger.error("Account resolution failed: empty account code provided")
         raise SupplierPaymentError("Account code is required")
 
     try:
         return Account.objects.get(chart=chart, code=code, is_active=True)
     except Account.DoesNotExist as exc:
+        logger.error(
+            "Account resolution failed: account not found",
+            extra={"account_code": code, "chart": getattr(chart, "name", None)},
+        )
         raise AccountResolutionError(
             f"Account with code={code} not found in active chart ({getattr(chart, 'name', 'ACTIVE_CHART')})."
         ) from exc
     except Account.MultipleObjectsReturned as exc:
+        logger.error(
+            "Account resolution failed: multiple accounts found",
+            extra={"account_code": code, "chart": getattr(chart, "name", None)},
+        )
         raise AccountResolutionError(
             f"Multiple active accounts found with code={code} in active chart ({getattr(chart, 'name', 'ACTIVE_CHART')}). "
             "Account codes must be unique per chart."
@@ -54,12 +67,6 @@ def _resolve_account_by_code(*, code: str) -> Account:
 def _resolve_payment_account(
     *, payment_method: str, payment_account_code: str | None
 ) -> Account:
-    """
-    - If payment_account_code provided -> use it
-    - Else auto-resolve from method:
-        cash -> Cash
-        bank/transfer/card -> Bank
-    """
     code = (payment_account_code or "").strip()
     if code:
         return _resolve_account_by_code(code=code)
@@ -70,6 +77,10 @@ def _resolve_payment_account(
     if m in ("bank", "transfer", "card"):
         return get_bank_account()
 
+    logger.error(
+        "Invalid payment method provided",
+        extra={"payment_method": payment_method},
+    )
     raise SupplierPaymentError("Invalid payment_method. Use 'cash' or 'bank'.")
 
 
@@ -87,16 +98,25 @@ def pay_supplier_invoice(
 ):
     """
     CREATE SUPPLIER PAYMENT (atomic)
-
-    Flow:
-      1) Validate supplier (and invoice if provided)
-      2) Create SupplierPayment row
-      3) Post ledger FIRST (idempotent)
-      4) Return receipt
     """
+
+    logger.info(
+        "Initiating supplier payment",
+        extra={
+            "supplier_id": supplier_id,
+            "invoice_id": invoice_id,
+            "amount": str(amount),
+            "payment_method": payment_method,
+        },
+    )
+
     try:
         supplier = Supplier.objects.get(id=supplier_id, is_active=True)
     except Supplier.DoesNotExist as exc:
+        logger.error(
+            "Supplier not found during payment",
+            extra={"supplier_id": supplier_id},
+        )
         raise SupplierPaymentError("Supplier not found") from exc
 
     invoice = None
@@ -104,27 +124,37 @@ def pay_supplier_invoice(
         try:
             invoice = PurchaseInvoice.objects.get(id=invoice_id, supplier=supplier)
         except PurchaseInvoice.DoesNotExist as exc:
+            logger.error(
+                "Invoice not found for supplier",
+                extra={"invoice_id": invoice_id, "supplier_id": supplier_id},
+            )
             raise SupplierPaymentError("Invoice not found for supplier") from exc
 
     amt = _money(amount)
     if amt <= Decimal("0.00"):
+        logger.error(
+            "Invalid payment amount",
+            extra={"amount": str(amount)},
+        )
         raise SupplierPaymentError("Amount must be > 0")
 
     pay_date = payment_date or timezone.now().date()
 
-    # Resolve Accounts Payable (allow override by code)
-    ap_code = (payable_account_code or "").strip()
-    payable_account = (
-        _resolve_account_by_code(code=ap_code)
-        if ap_code
-        else get_accounts_payable_account()
-    )
+    try:
+        ap_code = (payable_account_code or "").strip()
+        payable_account = (
+            _resolve_account_by_code(code=ap_code)
+            if ap_code
+            else get_accounts_payable_account()
+        )
 
-    # Resolve Cash/Bank (allow override by code)
-    payment_account = _resolve_payment_account(
-        payment_method=payment_method,
-        payment_account_code=payment_account_code,
-    )
+        payment_account = _resolve_payment_account(
+            payment_method=payment_method,
+            payment_account_code=payment_account_code,
+        )
+    except Exception:
+        logger.exception("Account resolution failed during supplier payment")
+        raise
 
     payment = SupplierPayment.objects.create(
         supplier=supplier,
@@ -146,11 +176,27 @@ def pay_supplier_invoice(
             invoice_number=(invoice.invoice_number if invoice else ""),
         )
     except (IdempotencyError, JournalEntryCreationError) as exc:
+        logger.error(
+            "Journal entry creation failed for supplier payment",
+            extra={"payment_id": str(payment.id)},
+        )
         transaction.set_rollback(True)
         raise SupplierPaymentError(str(exc)) from exc
-    except Exception as exc:
+    except Exception:
+        logger.exception(
+            "Unexpected failure posting supplier payment to ledger",
+            extra={"payment_id": str(payment.id)},
+        )
         transaction.set_rollback(True)
-        raise SupplierPaymentError(f"Failed to post supplier payment: {exc}") from exc
+        raise SupplierPaymentError("Failed to post supplier payment")
+
+    logger.info(
+        "Supplier payment completed successfully",
+        extra={
+            "payment_id": str(payment.id),
+            "journal_entry_id": je.id,
+        },
+    )
 
     return {
         "payment_id": str(payment.id),

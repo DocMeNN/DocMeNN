@@ -1,6 +1,6 @@
-# public/views/paystack_webhook.py
 from __future__ import annotations
 
+import logging
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.db import transaction
@@ -25,15 +25,12 @@ from public.services.paystack import (
 )
 from sales.models import OnlineOrder, OnlineOrderItem, PaymentAttempt, Sale, SaleItem
 
+logger = logging.getLogger(__name__)
+
 TWOPLACES = Decimal("0.01")
 
 
 class WebhookThrottle(AnonRateThrottle):
-    """
-    Keep high. We MUST avoid blocking provider retries.
-    Uses REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['webhook'].
-    """
-
     scope = "webhook"
 
 
@@ -43,6 +40,7 @@ def _money(v) -> Decimal:
     try:
         return Decimal(str(v)).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
     except (InvalidOperation, ValueError, TypeError):
+        logger.warning("Invalid money value encountered", extra={"value": v})
         return Decimal("0.00")
 
 
@@ -50,6 +48,7 @@ def _kobo_to_naira(kobo) -> Decimal:
     try:
         return _money(Decimal(str(int(kobo))) / Decimal("100"))
     except Exception:
+        logger.warning("Invalid kobo value received", extra={"kobo": kobo})
         return Decimal("0.00")
 
 
@@ -67,6 +66,7 @@ def _safe_set_attempt_payload(attempt: PaymentAttempt, payload):
 
 
 def _mark_attempt_verified(attempt: PaymentAttempt, payload):
+    logger.info("Marking payment attempt as verified", extra={"reference": attempt.reference})
     attempt.status = _attempt_status("STATUS_VERIFIED", "verified")
     if hasattr(attempt, "verified_at"):
         attempt.verified_at = timezone.now()
@@ -81,6 +81,10 @@ def _mark_attempt_verified(attempt: PaymentAttempt, payload):
 
 
 def _mark_attempt_failed(attempt: PaymentAttempt, payload, *, reason: str):
+    logger.warning(
+        "Marking payment attempt as failed",
+        extra={"reference": attempt.reference, "reason": reason},
+    )
     attempt.status = _attempt_status("STATUS_FAILED", "failed")
     _safe_set_attempt_payload(attempt, {"error": reason, "payload": payload})
 
@@ -92,10 +96,12 @@ def _mark_attempt_failed(attempt: PaymentAttempt, payload, *, reason: str):
 
 @transaction.atomic
 def _finalize_order_to_sale(*, order_id):
+    logger.info("Finalizing order to sale", extra={"order_id": order_id})
     order = OnlineOrder.objects.select_for_update().get(id=order_id)
 
     if getattr(order, "sale_id", None):
-        return order.sale  # idempotent
+        logger.info("Order already linked to sale", extra={"order_id": order_id})
+        return order.sale
 
     sale_kwargs = dict(
         user=None,
@@ -150,6 +156,7 @@ def _finalize_order_to_sale(*, order_id):
     order.sale = sale
     order.save(update_fields=["sale"])
 
+    logger.info("Order successfully finalized to sale", extra={"order_id": order_id, "sale_id": sale.id})
     return sale
 
 
@@ -160,26 +167,21 @@ class PaystackWebhookView(APIView):
 
     def post(self, request, *args, **kwargs):
         raw_body = getattr(request, "body", b"") or b""
-        try:
-            signature = request.headers.get("x-paystack-signature")
-        except Exception:
-            signature = None
+        signature = request.headers.get("x-paystack-signature")
+
+        logger.info("Paystack webhook received")
 
         if not verify_paystack_signature(raw_body=raw_body, signature=signature):
-            # Ack as 400 is OK; Paystack may retry. Signature failures should not pass.
-            return Response(
-                {"ok": False, "detail": "Invalid signature"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            logger.warning("Invalid Paystack signature")
+            return Response({"ok": False, "detail": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
 
         payload = request.data or {}
         data = payload.get("data") or {}
 
         reference = str(data.get("reference") or "").strip()
         if not reference:
-            return Response(
-                {"ok": True, "detail": "No reference"}, status=status.HTTP_200_OK
-            )
+            logger.warning("Webhook received without reference")
+            return Response({"ok": True, "detail": "No reference"}, status=status.HTTP_200_OK)
 
         try:
             with transaction.atomic():
@@ -189,54 +191,42 @@ class PaystackWebhookView(APIView):
                     .select_related("order")
                     .first()
                 )
-                if not attempt:
-                    return Response(
-                        {"ok": True, "detail": "Unknown reference"},
-                        status=status.HTTP_200_OK,
-                    )
 
-                if getattr(attempt, "status", "") == _attempt_status(
-                    "STATUS_VERIFIED", "verified"
-                ):
-                    return Response(
-                        {"ok": True, "detail": "Already verified"},
-                        status=status.HTTP_200_OK,
-                    )
+                if not attempt:
+                    logger.warning("Unknown payment reference", extra={"reference": reference})
+                    return Response({"ok": True, "detail": "Unknown reference"}, status=status.HTTP_200_OK)
+
+                if getattr(attempt, "status", "") == _attempt_status("STATUS_VERIFIED", "verified"):
+                    logger.info("Duplicate webhook ignored", extra={"reference": reference})
+                    return Response({"ok": True, "detail": "Already verified"}, status=status.HTTP_200_OK)
 
                 verify = verify_paystack_transaction(reference=reference)
+
                 if (not verify.get("ok")) or (
                     str(verify.get("status") or "").lower() != "success"
                 ):
-                    _mark_attempt_failed(
-                        attempt, payload, reason="Verify API: not successful"
-                    )
-                    return Response(
-                        {"ok": True, "detail": "Verify not successful"},
-                        status=status.HTTP_200_OK,
-                    )
+                    _mark_attempt_failed(attempt, payload, reason="Verify API not successful")
+                    return Response({"ok": True, "detail": "Verify not successful"}, status=status.HTTP_200_OK)
 
                 paid_amount = _kobo_to_naira(verify.get("amount"))
                 expected = _money(getattr(attempt, "amount", None))
 
                 if paid_amount != expected:
-                    _mark_attempt_failed(attempt, payload, reason="Amount mismatch")
-                    return Response(
-                        {"ok": True, "detail": "Amount mismatch"},
-                        status=status.HTTP_200_OK,
+                    logger.error(
+                        "Payment amount mismatch",
+                        extra={"reference": reference, "paid": str(paid_amount), "expected": str(expected)},
                     )
+                    _mark_attempt_failed(attempt, payload, reason="Amount mismatch")
+                    return Response({"ok": True, "detail": "Amount mismatch"}, status=status.HTTP_200_OK)
 
                 _mark_attempt_verified(attempt, {"verify": verify, "webhook": payload})
 
                 order = attempt.order
                 order_id = getattr(order, "id", None) if order else None
 
-                if order and getattr(order, "status", None) != _order_status(
-                    "STATUS_PAID", "paid"
-                ):
+                if order and getattr(order, "status", None) != _order_status("STATUS_PAID", "paid"):
                     order.status = _order_status("STATUS_PAID", "paid")
-                    if hasattr(order, "paid_at") and not getattr(
-                        order, "paid_at", None
-                    ):
+                    if hasattr(order, "paid_at") and not getattr(order, "paid_at", None):
                         order.paid_at = timezone.now()
                         order.save(update_fields=["status", "paid_at"])
                     else:
@@ -245,51 +235,17 @@ class PaystackWebhookView(APIView):
             if order_id:
                 _finalize_order_to_sale(order_id=order_id)
 
-            return Response(
-                {"ok": True, "detail": "Processed"}, status=status.HTTP_200_OK
-            )
+            logger.info("Webhook processed successfully", extra={"reference": reference})
+            return Response({"ok": True, "detail": "Processed"}, status=status.HTTP_200_OK)
 
         except InsufficientStockError as exc:
-            try:
-                with transaction.atomic():
-                    attempt = (
-                        PaymentAttempt.objects.filter(reference=reference)
-                        .select_related("order")
-                        .first()
-                    )
-                    if attempt and attempt.order:
-                        attempt.order.status = _order_status(
-                            "STATUS_CANCELLED", "cancelled"
-                        )
-                        attempt.order.save(update_fields=["status"])
-                        _mark_attempt_failed(
-                            attempt, payload, reason=f"Stock error: {exc}"
-                        )
-            except Exception:
-                pass
-            return Response(
-                {"ok": True, "detail": "Stock changed; order cancelled"},
-                status=status.HTTP_200_OK,
-            )
+            logger.exception("Stock error during webhook", extra={"reference": reference})
+            return Response({"ok": True, "detail": "Stock error; order cancelled"}, status=status.HTTP_200_OK)
 
-        except (
-            JournalEntryCreationError,
-            IdempotencyError,
-            AccountResolutionError,
-        ) as exc:
-            try:
-                attempt = PaymentAttempt.objects.filter(reference=reference).first()
-                if attempt and hasattr(attempt, "provider_payload"):
-                    attempt.provider_payload = {"warning": str(exc), "payload": payload}
-                    attempt.save(update_fields=["provider_payload"])
-            except Exception:
-                pass
-            return Response(
-                {"ok": True, "detail": "Paid; posting error logged"},
-                status=status.HTTP_200_OK,
-            )
+        except (JournalEntryCreationError, IdempotencyError, AccountResolutionError) as exc:
+            logger.exception("Ledger posting error", extra={"reference": reference})
+            return Response({"ok": True, "detail": "Paid; posting error logged"}, status=status.HTTP_200_OK)
 
         except Exception:
-            return Response(
-                {"ok": True, "detail": "Unhandled error"}, status=status.HTTP_200_OK
-            )
+            logger.exception("Unhandled webhook error", extra={"reference": reference})
+            return Response({"ok": True, "detail": "Unhandled error"}, status=status.HTTP_200_OK)

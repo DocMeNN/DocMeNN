@@ -1,5 +1,6 @@
 asgiref==3.11.0
 attrs==25.4.0
+certifi==2026.2.25
 Django==5.2.11
 django-cors-headers==4.9.0
 django-environ==0.12.0
@@ -18,7 +19,9 @@ PyYAML==6.0.3
 referencing==0.37.0
 rpds-py==0.30.0
 ruff==0.15.1
+sentry-sdk==2.53.0
 sqlparse==0.5.5
 tzdata==2025.3
 uritemplate==4.2.0
+urllib3==2.6.3
 whitenoise==6.11.0
