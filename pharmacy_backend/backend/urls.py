@@ -33,6 +33,14 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
+
+from django.http import HttpResponse
+
+def sentry_test(request):
+    1 / 0
+
+
+
 # ------------------ API ROOT (PUBLIC) ------------------
 @extend_schema(
     responses={
@@ -165,4 +173,5 @@ urlpatterns = [
     # ✅ Root convenience: visiting / takes you to Swagger docs
     path("", RedirectView.as_view(url="/api/docs/", permanent=False), name="root"),
     path("api/", include(api_urlpatterns)),
+    path("sentry-test/", sentry_test),
 ]
