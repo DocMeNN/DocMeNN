@@ -4,11 +4,18 @@ PATH: backend/settings/prod.py
 PRODUCTION SETTINGS (Render)
 
 HARDENED FINAL VERSION
++ SENTRY INTEGRATION
 """
 
 from __future__ import annotations
 
+import logging
+import os
+import sys
+
+import sentry_sdk
 from django.core.exceptions import ImproperlyConfigured
+from sentry_sdk.integrations.django import DjangoIntegration
 
 from .base import *  # noqa: F403
 from .base import BASE_DIR, MIDDLEWARE, env  # explicit import
@@ -79,7 +86,6 @@ SECURE_REDIRECT_EXEMPT = []
 # ----------------------------
 # HSTS (FULL HARDENING)
 # ----------------------------
-# 1 year required for preload
 SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
@@ -102,7 +108,7 @@ CSRF_COOKIE_SAMESITE = "Lax"
 # SECURITY HEADERS
 # ----------------------------
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_BROWSER_XSS_FILTER = True  # backward compatibility header
+SECURE_BROWSER_XSS_FILTER = True
 SECURE_REFERRER_POLICY = "strict-origin"
 X_FRAME_OPTIONS = "DENY"
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
@@ -144,24 +150,18 @@ if any(o.startswith("http://") for o in CSRF_TRUSTED_ORIGINS):
 CORS_ALLOW_CREDENTIALS = False
 
 
-import logging
-import sys
-
-
+# ----------------------------
+# LOGGING
+# ----------------------------
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-
     "formatters": {
         "structured": {
-            "format": (
-                "{asctime} | {levelname} | {name} | "
-                "{message}"
-            ),
+            "format": "{asctime} | {levelname} | {name} | {message}",
             "style": "{",
         },
     },
-
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
@@ -169,35 +169,26 @@ LOGGING = {
             "formatter": "structured",
         },
     },
-
     "root": {
         "handlers": ["console"],
         "level": "INFO",
     },
-
     "loggers": {
-        # Django internal errors
         "django": {
             "handlers": ["console"],
             "level": "WARNING",
             "propagate": False,
         },
-
-        # Payment logic
         "payments": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
         },
-
-        # Webhooks
         "webhooks": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
         },
-
-        # Accounting / journal posting
         "accounting": {
             "handlers": ["console"],
             "level": "INFO",
@@ -205,3 +196,18 @@ LOGGING = {
         },
     },
 }
+
+
+# ----------------------------
+# SENTRY (PRODUCTION ONLY)
+# ----------------------------
+SENTRY_DSN = os.environ.get("SENTRY_DSN")
+
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        send_default_pii=True,
+        environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+        traces_sample_rate=0.2,
+    )
