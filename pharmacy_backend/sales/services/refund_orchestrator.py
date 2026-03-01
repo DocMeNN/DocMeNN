@@ -1,3 +1,5 @@
+# sales/services/refund_orchestrator.py
+
 """
 ======================================================
 PATH: sales/services/refund_orchestrator.py
@@ -27,13 +29,6 @@ Refund Modes:
    - Sale may remain COMPLETED (or optionally PARTIALLY_REFUNDED if the model supports it)
    - When cumulative partials reach full quantity, we finalize by creating SaleRefundAudit
      and transitioning status -> REFUNDED WITHOUT re-posting ledger or re-restoring stock.
-
-Notes:
-- No frontend assumptions are made here.
-- UI can be added later without changing this logic.
-
-Golden Rule Compliance:
-- Full file replacement (copy & replace).
 """
 
 from __future__ import annotations
@@ -84,20 +79,8 @@ def _to_int_qty(value) -> int:
 
 
 def _normalize_partial_items(*, sale: Sale, items: list[dict]) -> list[dict]:
-    """
-    Normalize partial refund items:
-    - Must be list of dicts with {sale_item_id, quantity}
-    - quantity must be int >= 1
-    - Aggregates duplicates by sale_item_id
-    - Validates sale_item_id belongs to sale
-    """
     if not isinstance(items, list) or not items:
         raise ValidationError("Partial refund requires items.")
-
-    if not hasattr(sale, "items"):
-        raise ValidationError(
-            "Sale items relation not available; cannot process partial refund."
-        )
 
     sale_items = list(sale.items.all())
     sale_item_ids = {str(si.id) for si in sale_items}
@@ -142,10 +125,6 @@ def _already_refunded_qty_for_sale_item(*, sale_item: SaleItem) -> int:
 
 
 def _ensure_partial_ceiling(*, sale: Sale, normalized_items: list[dict]):
-    """
-    Enforce per-item ceilings using SaleItemRefund history:
-    - cannot refund more than (sold - already_refunded) for each sale item
-    """
     sale_items_by_id = {str(si.id): si for si in sale.items.all()}
 
     for line in normalized_items:
@@ -173,10 +152,6 @@ def _ensure_partial_ceiling(*, sale: Sale, normalized_items: list[dict]):
 def _create_item_refund_rows(
     *, sale: Sale, user, reason: str | None, normalized_items: list[dict]
 ) -> list[SaleItemRefund]:
-    """
-    Create immutable SaleItemRefund rows (append-only).
-    Snapshots price/cost from SaleItem (authoritative snapshot fields).
-    """
     sale_items_by_id = {str(si.id): si for si in sale.items.all()}
     rows: list[SaleItemRefund] = []
 
@@ -202,31 +177,17 @@ def _create_item_refund_rows(
 
 
 def _post_partial_refund_to_ledger(*, sale: Sale, refund_rows: list[SaleItemRefund]):
-    """
-    Posts a partial refund reversal to the ledger.
-
-    Requires a function in accounting/services/posting.py:
-      post_partial_refund_to_ledger(sale=..., refund_items=[SaleItemRefund,...])
-
-    We intentionally hard-fail if it is missing, because silent fallbacks
-    would corrupt accounting.
-    """
     try:
         from accounting.services.posting import post_partial_refund_to_ledger
     except Exception as exc:
         raise RefundOrchestratorError(
-            "Partial refund posting is not available yet. "
-            "Expected accounting.services.posting.post_partial_refund_to_ledger()."
+            "Partial refund posting is not available yet."
         ) from exc
 
     return post_partial_refund_to_ledger(sale=sale, refund_items=refund_rows)
 
 
 def _maybe_mark_sale_partially_refunded(*, sale: Sale):
-    """
-    If Sale supports STATUS_PARTIALLY_REFUNDED, set it.
-    Otherwise, leave as COMPLETED (safe with immutable money fields).
-    """
     status_partial = getattr(Sale, "STATUS_PARTIALLY_REFUNDED", None)
     if status_partial:
         sale.status = status_partial
@@ -235,14 +196,14 @@ def _maybe_mark_sale_partially_refunded(*, sale: Sale):
 
 def _maybe_finalize_to_full_refund(*, sale: Sale, user):
     """
-    If cumulative item refunds reach full sold quantities:
-    - create SaleRefundAudit + transition status -> REFUNDED using refund_sale()
-    - DO NOT restore stock (already restored via partials)
-    - DO NOT post full ledger reversal (already reversed via partials)
+    If cumulative partial refunds reach full sold quantities:
+    - Create SaleRefundAudit manually (WITHOUT calling refund_sale)
+    - Transition sale.status -> REFUNDED
+    - DO NOT restore stock
+    - DO NOT post ledger
     """
-    total_sold = 0
-    for si in sale.items.all():
-        total_sold += int(getattr(si, "quantity", 0) or 0)
+
+    total_sold = sum(int(getattr(si, "quantity", 0) or 0) for si in sale.items.all())
 
     total_refunded = int(
         SaleItemRefund.objects.filter(sale=sale)
@@ -252,12 +213,18 @@ def _maybe_finalize_to_full_refund(*, sale: Sale, user):
     )
 
     if total_sold > 0 and total_refunded >= total_sold:
-        # This creates the immutable audit + status transition only.
-        refund_sale(
-            sale=sale,
-            user=user,
-            refund_reason="Auto-finalized after cumulative partial refunds",
-        )
+        # Prevent duplicate audit
+        if not SaleRefundAudit.objects.filter(sale=sale).exists():
+            SaleRefundAudit.objects.create(
+                sale=sale,
+                refunded_by=user,
+                refund_reason="Auto-finalized after cumulative partial refunds",
+                original_total_amount=sale.total_amount,
+                original_subtotal_amount=sale.subtotal_amount,
+            )
+
+        sale.status = Sale.STATUS_REFUNDED
+        sale.save(update_fields=["status"])
         return True
 
     return False
@@ -271,71 +238,34 @@ def refund_sale_with_stock_restoration(
     refund_reason: str | None = None,
     items: list[dict] | None = None,
 ) -> Sale:
-    """
-    Refund orchestrator (FULL or PARTIAL), atomic.
 
-    FULL refund:
-      - items is None or []
-      - domain refund -> audit + status
-      - restore all stock
-      - post full ledger reversal
-
-    PARTIAL refund:
-      - items provided
-      - enforce ceilings
-      - create SaleItemRefund rows
-      - restore stock for requested quantities
-      - post partial ledger reversal
-      - optionally mark status partially_refunded
-      - if cumulative hits full: finalize with audit+status only
-    """
     _assert_user_can_refund(user=user)
 
-    # --------------------------------------------------
-    # FULL REFUND
-    # --------------------------------------------------
+    # ---------------- FULL REFUND ----------------
     if not items:
-        # Domain transition (audit + status)
         refunded_sale = refund_sale(
             sale=sale,
             user=user,
             refund_reason=refund_reason,
         )
 
-        # Must exist now
-        refund_audit = SaleRefundAudit.objects.select_related("sale").get(
-            sale=refunded_sale
-        )
+        refund_audit = SaleRefundAudit.objects.get(sale=refunded_sale)
 
-        # Stock restoration (full)
         restore_stock_from_sale(
             sale=refunded_sale,
             user=user,
             items=None,
         )
 
-        # Ledger posting (full reversal)
         try:
             from accounting.services.posting import post_refund_to_ledger
-
             post_refund_to_ledger(sale=refunded_sale, refund_audit=refund_audit)
-        except (
-            JournalEntryCreationError,
-            IdempotencyError,
-            AccountResolutionError,
-        ) as exc:
-            raise RefundOrchestratorError(str(exc)) from exc
         except Exception as exc:
-            raise RefundOrchestratorError(
-                f"Refund ledger posting failed: {exc}"
-            ) from exc
+            raise RefundOrchestratorError(str(exc)) from exc
 
         return refunded_sale
 
-    # --------------------------------------------------
-    # PARTIAL REFUND
-    # --------------------------------------------------
-    # Only refundable when sale is completed (or partially refunded if supported)
+    # ---------------- PARTIAL REFUND ----------------
     allowed_statuses = {Sale.STATUS_COMPLETED}
     maybe_partial = getattr(Sale, "STATUS_PARTIALLY_REFUNDED", None)
     if maybe_partial:
@@ -347,7 +277,6 @@ def refund_sale_with_stock_restoration(
     normalized_items = _normalize_partial_items(sale=sale, items=items)
     _ensure_partial_ceiling(sale=sale, normalized_items=normalized_items)
 
-    # Create immutable refund rows (append-only)
     refund_rows = _create_item_refund_rows(
         sale=sale,
         user=user,
@@ -355,29 +284,18 @@ def refund_sale_with_stock_restoration(
         normalized_items=normalized_items,
     )
 
-    # Restore stock for requested quantities (service enforces ceilings via movements)
     restore_stock_from_sale(
         sale=sale,
         user=user,
         items=normalized_items,
     )
 
-    # Post proportional reversal
     try:
         _post_partial_refund_to_ledger(sale=sale, refund_rows=refund_rows)
-    except (JournalEntryCreationError, IdempotencyError, AccountResolutionError) as exc:
-        raise RefundOrchestratorError(str(exc)) from exc
-    except RefundOrchestratorError:
-        raise
     except Exception as exc:
-        raise RefundOrchestratorError(
-            f"Partial refund ledger posting failed: {exc}"
-        ) from exc
+        raise RefundOrchestratorError(str(exc)) from exc
 
-    # Update status if supported
     _maybe_mark_sale_partially_refunded(sale=sale)
-
-    # If this partial makes it fully refunded, finalize state + audit only
     _maybe_finalize_to_full_refund(sale=sale, user=user)
 
     return sale
