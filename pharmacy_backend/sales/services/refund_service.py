@@ -1,65 +1,22 @@
-# sales/services/refund_service.py
+# ============================================================
+# PATH: sales/services/refund_service.py
+# ============================================================
 
-"""
-REFUND SERVICE (DOMAIN-CONTROLLED)
-
-Purpose:
-- Perform the SALES-domain refund transition with a strict, immutable audit trail.
-- This service does NOT restore stock (orchestrator handles stock).
-- This service does NOT recalculate money (uses authoritative snapshots).
-
-Golden Rule Compliance:
-- File begins with an in-body path comment.
-- Docstring included inside code.
-
-HOTSPRINT UPGRADE (COGS + PROFIT READY):
-- Creates SaleRefundAudit with full original_* snapshots:
-  subtotal/tax/discount/total + cogs + gross profit (from Sale snapshot fields).
-- Keeps sale lifecycle rules intact and deterministic.
-"""
-
+from decimal import Decimal
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from sales.models.refund_audit import SaleRefundAudit
 from sales.models.sale import Sale
-from sales.services.sale_lifecycle import (
-    InvalidSaleTransitionError,
-    validate_transition,
-)
-
-# ============================================================
-# DOMAIN ERRORS
-# ============================================================
 
 
 class RefundError(Exception):
     pass
 
 
-class InvalidSaleStateError(RefundError):
+class OverRefundError(RefundError):
     pass
-
-
-class DuplicateRefundError(RefundError):
-    pass
-
-
-class AccountingPostingError(RefundError):
-    """
-    Raised when refund cannot be posted to the accounting ledger.
-
-    NOTE:
-    The refund workflow is a SALES-domain concern, even if ledger posting
-    is performed by an accounting service/adapter.
-    """
-
-    pass
-
-
-# ============================================================
-# REFUND SERVICE
-# ============================================================
 
 
 @transaction.atomic
@@ -67,74 +24,54 @@ def refund_sale(
     *,
     sale: Sale,
     user,
-    refund_reason: str | None = None,
-) -> Sale:
-    """
-    FULL SALE REFUND (DOMAIN-CONTROLLED, AUDITED)
+    subtotal_amount: Decimal,
+    tax_amount: Decimal,
+    discount_amount: Decimal,
+    cogs_amount: Decimal,
+    reason: str | None = None,
+):
 
-    GUARANTEES:
-    - No stock mutation (orchestrator handles stock)
-    - Does NOT recalculate money (uses snapshots on Sale)
-    - Immutable audit trail (SaleRefundAudit)
-    - Atomic domain state transition
+    if sale.status not in (Sale.STATUS_COMPLETED, Sale.STATUS_REFUNDED):
+        raise RefundError("Sale is not refundable")
 
-    FLOW:
-    1) Validate lifecycle transition
-    2) Ensure not already refunded
-    3) Create immutable SaleRefundAudit (snapshot)
-    4) Transition sale.status -> REFUNDED
-    """
+    subtotal_amount = Decimal(subtotal_amount or 0)
+    tax_amount = Decimal(tax_amount or 0)
+    discount_amount = Decimal(discount_amount or 0)
+    cogs_amount = Decimal(cogs_amount or 0)
 
-    # --------------------------------------------------
-    # 1. LIFECYCLE VALIDATION
-    # --------------------------------------------------
-    try:
-        validate_transition(
-            sale=sale,
-            target_status=Sale.STATUS_REFUNDED,
-        )
-    except InvalidSaleTransitionError as exc:
-        raise InvalidSaleStateError(str(exc)) from exc
+    total_amount = subtotal_amount + tax_amount - discount_amount
+    gross_profit_amount = subtotal_amount - cogs_amount
 
-    # --------------------------------------------------
-    # 2. DUPLICATE REFUND PROTECTION
-    # --------------------------------------------------
-    if SaleRefundAudit.objects.filter(sale=sale).exists():
-        raise DuplicateRefundError(f"Sale {sale.id} has already been refunded")
+    # 🔒 LOCK ROW FOR CONCURRENCY SAFETY
+    sale = Sale.objects.select_for_update().get(pk=sale.pk)
 
-    # --------------------------------------------------
-    # 3. CREATE IMMUTABLE AUDIT RECORD (SNAPSHOT)
-    # --------------------------------------------------
-    now = timezone.now()
-
-    SaleRefundAudit.objects.create(
-        sale=sale,
-        refunded_by=user,
-        reason=(refund_reason or "").strip(),
-        refunded_at=now,
-        # Money snapshots (authoritative)
-        original_subtotal_amount=getattr(sale, "subtotal_amount", None) or 0,
-        original_tax_amount=getattr(sale, "tax_amount", None) or 0,
-        original_discount_amount=getattr(sale, "discount_amount", None) or 0,
-        original_total_amount=getattr(sale, "total_amount", None) or 0,
-        # Cost/profit snapshots (authoritative)
-        original_cogs_amount=getattr(sale, "cogs_amount", None) or 0,
-        original_gross_profit_amount=getattr(sale, "gross_profit_amount", None) or 0,
+    already_refunded = (
+        sale.refund_audits.aggregate(total=Sum("total_amount"))["total"]
+        or Decimal("0.00")
     )
 
-    # --------------------------------------------------
-    # 4. STATE TRANSITION ONLY
-    # --------------------------------------------------
-    sale.status = Sale.STATUS_REFUNDED
+    remaining = Decimal(sale.total_amount) - Decimal(already_refunded)
 
-    # DO NOT overwrite completed_at (it defines when the sale occurred).
-    # If Sale has a refunded_at field, set it; otherwise rely on the audit record.
-    update_fields = ["status"]
+    if total_amount > remaining:
+        raise OverRefundError(
+            f"Refund exceeds remaining balance. Remaining={remaining}"
+        )
 
-    if hasattr(sale, "refunded_at"):
-        sale.refunded_at = now
-        update_fields.append("refunded_at")
+    refund = SaleRefundAudit.objects.create(
+        sale=sale,
+        refunded_by=user,
+        reason=(reason or "").strip(),
+        refunded_at=timezone.now(),
+        subtotal_amount=subtotal_amount,
+        tax_amount=tax_amount,
+        discount_amount=discount_amount,
+        total_amount=total_amount,
+        cogs_amount=cogs_amount,
+        gross_profit_amount=gross_profit_amount,
+    )
 
-    sale.save(update_fields=update_fields)
+    if (already_refunded + total_amount) >= sale.total_amount:
+        sale.status = Sale.STATUS_REFUNDED
+        sale.save(update_fields=["status"])
 
-    return sale
+    return refund

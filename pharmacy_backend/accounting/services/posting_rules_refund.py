@@ -1,161 +1,73 @@
-# accounting/services/posting_rules_refund.py
+# ============================================================
+# PATH: accounting/services/posting_rules_refund.py
+# ============================================================
 
-"""
-POSTING RULES — POS REFUNDS
-
-Refunds are first-class accounting events.
-
-Accounting Effect:
-- Debit  Sales Revenue (reverse revenue)
-- Debit  VAT Payable (reverse tax liability)
-- Credit Cash/Bank/AR (payout source based on payment method)
-- Credit Sales Discounts (reverse discount contra-revenue) [if discount existed]
-
-IMPORTANT:
-- This module only BUILDS postings.
-- The accounting engine (create_journal_entry) enforces balancing + idempotency.
-"""
-
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal, ROUND_HALF_UP
 
 from accounting.services.account_resolver import (
     get_accounts_receivable_account,
     get_bank_account,
     get_cash_account,
+    get_inventory_account,
+    get_sales_cogs_account,
     get_sales_discount_account,
     get_sales_revenue_account,
     get_vat_payable_account,
 )
-from accounting.services.exceptions import PostingRuleError
 from accounting.services.journal_entry_service import create_journal_entry
+
 
 TWOPLACES = Decimal("0.01")
 
 
-def _money(value) -> Decimal:
-    """
-    Safe money coercion to Decimal(2dp).
-
-    Accepts Decimal/int/str/float (float discouraged).
-    """
-    if value is None or value == "":
-        return Decimal("0.00")
-
-    if isinstance(value, Decimal):
-        amt = value
-    else:
-        try:
-            amt = Decimal(str(value))
-        except (InvalidOperation, ValueError, TypeError):
-            raise PostingRuleError(f"Invalid money value: {value!r}")
-
-    return amt.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+def _money(value):
+    return Decimal(value or 0).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
 
 
-def _resolve_refund_payout_account(*, payment_method: str | None):
-    """
-    Decide which account is credited when refund is paid out.
-    """
-    method = (payment_method or "cash").lower().strip()
-
+def _resolve_payout_account(method):
+    method = (method or "cash").lower()
     if method == "cash":
         return get_cash_account()
-
-    if method in ("card", "transfer", "bank"):
+    if method in ("card", "bank", "transfer", "pos"):
         return get_bank_account()
-
     if method in ("credit", "invoice", "on_account"):
-        # Refund reduces what customer owes (AR)
         return get_accounts_receivable_account()
-
-    # Safe fallback
     return get_cash_account()
 
 
 def post_pos_refund(*, refund_audit):
-    """
-    POST SALE REFUND AUDIT → ACCOUNTING
 
-    Expected object: SaleRefundAudit instance with:
-    - refund_audit.sale (Sale)
-    - refund_audit.id (UUID)
-    - refund_audit.original_total_amount (snapshot)
-    """
-
-    if refund_audit is None or getattr(refund_audit, "sale", None) is None:
-        raise PostingRuleError("refund_audit with attached sale is required")
+    subtotal = _money(refund_audit.subtotal_amount)
+    tax = _money(refund_audit.tax_amount)
+    discount = _money(refund_audit.discount_amount)
+    total = _money(refund_audit.total_amount)
+    cogs = _money(refund_audit.cogs_amount)
 
     sale = refund_audit.sale
-
-    subtotal = _money(getattr(sale, "subtotal_amount", None))
-    tax = _money(getattr(sale, "tax_amount", None))
-    discount = _money(getattr(sale, "discount_amount", None))
-
-    # Prefer audited snapshot total; fallback to sale.total_amount
-    total = _money(
-        getattr(refund_audit, "original_total_amount", None)
-        or getattr(sale, "total_amount", None)
-    )
-
-    # Sanity: subtotal + tax - discount should equal total (2dp)
-    expected_total = _money(subtotal + tax - discount)
-    if expected_total != total:
-        raise PostingRuleError(
-            "Refund totals mismatch: "
-            f"subtotal({subtotal}) + tax({tax}) - discount({discount}) != total({total})"
-        )
+    payout_account = _resolve_payout_account(sale.payment_method)
 
     postings = []
 
-    # Debit Revenue (reverse revenue)
-    if subtotal > Decimal("0.00"):
-        postings.append(
-            {
-                "account": get_sales_revenue_account(),
-                "debit": subtotal,
-                "credit": Decimal("0.00"),
-            }
-        )
+    if subtotal > 0:
+        postings.append({"account": get_sales_revenue_account(), "debit": subtotal, "credit": 0})
 
-    # Debit VAT Payable (reverse tax liability)
-    if tax > Decimal("0.00"):
-        postings.append(
-            {
-                "account": get_vat_payable_account(),
-                "debit": tax,
-                "credit": Decimal("0.00"),
-            }
-        )
+    if tax > 0:
+        postings.append({"account": get_vat_payable_account(), "debit": tax, "credit": 0})
 
-    # Credit Sales Discounts (reverse discount, if any)
-    # Sales posting debits discount; refund should credit it back.
-    if discount > Decimal("0.00"):
-        postings.append(
-            {
-                "account": get_sales_discount_account(),
-                "debit": Decimal("0.00"),
-                "credit": discount,
-            }
-        )
+    if discount > 0:
+        postings.append({"account": get_sales_discount_account(), "debit": 0, "credit": discount})
 
-    # Credit payout source (cash/bank/ar)
-    payout_account = _resolve_refund_payout_account(
-        payment_method=getattr(sale, "payment_method", None)
-    )
+    if total > 0:
+        postings.append({"account": payout_account, "debit": 0, "credit": total})
 
-    if total > Decimal("0.00"):
-        postings.append(
-            {
-                "account": payout_account,
-                "debit": Decimal("0.00"),
-                "credit": total,
-            }
-        )
+    # Reverse COGS properly
+    if cogs > 0:
+        postings.append({"account": get_inventory_account(), "debit": cogs, "credit": 0})
+        postings.append({"account": get_sales_cogs_account(), "debit": 0, "credit": cogs})
 
-    # Engine enforces balancing + idempotency via reference
     return create_journal_entry(
-        description=f"POS Refund {getattr(sale, 'invoice_no', '')}".strip(),
+        description=f"POS Refund {sale.invoice_no}",
         postings=postings,
         reference_type="POS_REFUND",
-        reference_id=str(getattr(refund_audit, "id", "")),
+        reference_id=str(refund_audit.id),
     )

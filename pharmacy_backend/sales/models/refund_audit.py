@@ -1,11 +1,23 @@
-# sales/models/refund_audit.py
+# ============================================================
+# PATH: sales/models/refund_audit.py
+# ============================================================
 
 """
-SALE REFUND AUDIT (IMMUTABLE)
+SALE REFUND AUDIT (DELTA-BASED, MULTI-REFUND SAFE)
 
-Compatibility layer:
-- Tests/legacy code expect class name: RefundAudit
-- Your current class is: SaleRefundAudit
+This model represents ONE refund event.
+
+Each record stores the FINANCIAL DELTA for that specific refund.
+
+Design:
+- A sale can have multiple refund audits.
+- Each refund audit represents an independent accounting event.
+- Refund audits are immutable.
+- Original sale money is NEVER mutated.
+
+Best Practice:
+- Never derive refund totals from Sale at posting time.
+- Store authoritative refund delta values here.
 """
 
 import uuid
@@ -23,10 +35,11 @@ User = settings.AUTH_USER_MODEL
 class SaleRefundAudit(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    sale = models.OneToOneField(
+    # 🔥 MULTI-REFUND SUPPORT
+    sale = models.ForeignKey(
         Sale,
         on_delete=models.PROTECT,
-        related_name="refund_audit",
+        related_name="refund_audits",
     )
 
     refunded_by = models.ForeignKey(
@@ -36,49 +49,50 @@ class SaleRefundAudit(models.Model):
         related_name="processed_refunds",
     )
 
-    reason = models.TextField(null=True, blank=True, help_text="Optional refund reason")
+    reason = models.TextField(blank=True, null=True)
     refunded_at = models.DateTimeField(default=timezone.now)
 
-    original_subtotal_amount = models.DecimalField(
-        max_digits=12, decimal_places=2, default=Decimal("0.00")
-    )
-    original_tax_amount = models.DecimalField(
-        max_digits=12, decimal_places=2, default=Decimal("0.00")
-    )
-    original_discount_amount = models.DecimalField(
-        max_digits=12, decimal_places=2, default=Decimal("0.00")
-    )
-    original_total_amount = models.DecimalField(
+    # ============================================================
+    # REFUND DELTA AMOUNTS (THIS TRANSACTION ONLY)
+    # ============================================================
+
+    subtotal_amount = models.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal("0.00")
     )
 
-    original_cogs_amount = models.DecimalField(
+    tax_amount = models.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal("0.00")
     )
-    original_gross_profit_amount = models.DecimalField(
+
+    discount_amount = models.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal("0.00")
     )
+
+    total_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+
+    cogs_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+
+    gross_profit_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+
+    # Accounting idempotency flag
+    is_accounted = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["-refunded_at"]
+        indexes = [
+            models.Index(fields=["sale"]),
+            models.Index(fields=["refunded_at"]),
+        ]
 
     def save(self, *args, **kwargs):
         if not self._state.adding:
             raise RuntimeError("SaleRefundAudit records are immutable")
-
-        self.original_subtotal_amount = Decimal(
-            getattr(self.sale, "subtotal_amount", 0) or 0
-        )
-        self.original_tax_amount = Decimal(getattr(self.sale, "tax_amount", 0) or 0)
-        self.original_discount_amount = Decimal(
-            getattr(self.sale, "discount_amount", 0) or 0
-        )
-        self.original_total_amount = Decimal(getattr(self.sale, "total_amount", 0) or 0)
-
-        self.original_cogs_amount = Decimal(getattr(self.sale, "cogs_amount", 0) or 0)
-        self.original_gross_profit_amount = Decimal(
-            getattr(self.sale, "gross_profit_amount", 0) or 0
-        )
 
         super().save(*args, **kwargs)
 
@@ -86,11 +100,4 @@ class SaleRefundAudit(models.Model):
         raise RuntimeError("SaleRefundAudit records cannot be deleted")
 
     def __str__(self):
-        inv = getattr(self.sale, "invoice_no", None) or str(self.sale_id)
-        return f"Refund | {inv}"
-
-
-# ---------------------------------------------------------
-# Legacy alias (tests expect RefundAudit)
-# ---------------------------------------------------------
-RefundAudit = SaleRefundAudit
+        return f"Refund {self.id} | {self.total_amount}"
