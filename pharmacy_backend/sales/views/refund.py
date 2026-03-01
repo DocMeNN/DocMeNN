@@ -10,17 +10,20 @@ from permissions.roles import (
     CAP_POS_SELL,
     CAP_REPORTS_VIEW_POS,
     HasCapability,
+    HasAnyCapability,
 )
+
 from sales.models.sale import Sale
 from sales.serializers.refund_command import SaleRefundCommandSerializer
 from sales.serializers.sale import SaleSerializer
 from sales.services.refund_orchestrator import refund_sale_with_stock_restoration
 from sales.services.refund_service import (
-    AccountingPostingError,
-    DuplicateRefundError,
-    InvalidSaleStateError,
     RefundError,
+    OverRefundError,
 )
+
+from accounting.services.exceptions import AccountingServiceError
+
 
 # ======================================================
 # API ERROR NORMALIZATION
@@ -28,9 +31,6 @@ from sales.services.refund_service import (
 
 
 def error_response(*, code: str, message: str, http_status: int):
-    """
-    Canonical API error response.
-    """
     return Response(
         {"error": {"code": code, "message": message}},
         status=http_status,
@@ -50,63 +50,54 @@ class SaleRefundViewSet(
     """
     Sale ViewSet (READ + REFUND).
 
-    - list/retrieve: for staff operational visibility
+    - list/retrieve: operational visibility
     - refund: protected capability (admin/manager)
     """
 
     queryset = Sale.objects.select_related("user").prefetch_related(
         "items",
         "items__product",
-        "refund_audit",
+        "refund_audits",
     )
 
     serializer_class = SaleSerializer
     permission_classes = [IsAuthenticated]
 
-    # Capability hooks used by HasCapability
     required_capability = None
 
-    def get_permissions(self):
-        """
-        Action-specific permissions.
+    # --------------------------------------------------
+    # PERMISSIONS
+    # --------------------------------------------------
 
-        Rules (Phase 1.2):
-        - refund requires CAP_POS_REFUND (admin/manager)
-        - list/retrieve require at least POS visibility capability
-          (we allow either selling or viewing POS reports)
-        """
+    def get_permissions(self):
+
         if self.action == "refund":
             self.required_capability = CAP_POS_REFUND
             return [IsAuthenticated(), HasCapability()]
 
-        # Read access:
-        # If you want to restrict sales visibility only to admin/manager/pharmacist,
-        # keep this as capability-based rather than role-based.
-        self.required_any_capabilities = {CAP_POS_SELL, CAP_REPORTS_VIEW_POS}
-        from permissions.roles import (
-            HasAnyCapability,  # local import to avoid circulars
-        )
-
+        # Read access requires either sell capability or reports visibility
+        self.required_any_capabilities = {
+            CAP_POS_SELL,
+            CAP_REPORTS_VIEW_POS,
+        }
         return [IsAuthenticated(), HasAnyCapability()]
 
+    # --------------------------------------------------
+    # SERIALIZER SWITCH
+    # --------------------------------------------------
+
     def get_serializer_class(self):
-        """
-        Use command serializer for refund action,
-        read serializer for everything else.
-        """
         if self.action == "refund":
             return SaleRefundCommandSerializer
         return SaleSerializer
 
     # --------------------------------------------------
-    # REFUND SALE (FULL REFUND ONLY)
+    # REFUND SALE
     # --------------------------------------------------
 
     @action(detail=True, methods=["post"], url_path="refund")
     def refund(self, request, pk=None):
-        """
-        Refund a completed sale.
-        """
+
         sale = self.get_object()
 
         command_serializer = SaleRefundCommandSerializer(
@@ -119,24 +110,19 @@ class SaleRefundViewSet(
             refunded_sale = refund_sale_with_stock_restoration(
                 sale=sale,
                 user=request.user,
-                refund_reason=command_serializer.validated_data.get("reason", ""),
+                refund_reason=command_serializer.validated_data.get(
+                    "reason", ""
+                ),
             )
 
-        except InvalidSaleStateError as exc:
+        except OverRefundError as exc:
             return error_response(
-                code="INVALID_SALE_STATE",
+                code="OVER_REFUND",
                 message=str(exc),
                 http_status=status.HTTP_400_BAD_REQUEST,
             )
 
-        except DuplicateRefundError:
-            return error_response(
-                code="SALE_ALREADY_REFUNDED",
-                message="This sale has already been refunded.",
-                http_status=status.HTTP_409_CONFLICT,
-            )
-
-        except AccountingPostingError as exc:
+        except AccountingServiceError as exc:
             return error_response(
                 code="ACCOUNTING_POST_FAILED",
                 message=str(exc),

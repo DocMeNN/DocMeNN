@@ -1,8 +1,13 @@
-from django.contrib import admin
+# sales/admin.py
 
-from sales.models.refund_audit import SaleRefundAudit
+from django.contrib import admin
 from sales.models.sale import Sale
-from sales.models.sale_item import SaleItem
+from sales.models.refund_audit import SaleRefundAudit
+
+
+# ======================================================
+# SALE ADMIN
+# ======================================================
 
 
 @admin.register(Sale)
@@ -11,31 +16,46 @@ class SaleAdmin(admin.ModelAdmin):
         "invoice_no",
         "status",
         "total_amount",
+        "total_refunded_amount",
+        "remaining_refundable_amount",
+        "created_at",
+    )
+    readonly_fields = (
+        "invoice_no",
+        "total_refunded_amount",
+        "remaining_refundable_amount",
         "created_at",
         "completed_at",
     )
-    readonly_fields = [f.name for f in Sale._meta.fields]
-    ordering = ("-created_at",)
+    search_fields = ("invoice_no",)
+    list_filter = ("status", "created_at")
 
 
-@admin.register(SaleItem)
-class SaleItemAdmin(admin.ModelAdmin):
-    list_display = (
-        "sale",
-        "product",
-        "quantity",
-        "unit_price",
-        "total_price",
-    )
-    readonly_fields = [f.name for f in SaleItem._meta.fields]
+# ======================================================
+# REFUND AUDIT ADMIN
+# ======================================================
 
 
 @admin.register(SaleRefundAudit)
 class SaleRefundAuditAdmin(admin.ModelAdmin):
     list_display = (
         "sale",
+        "total_amount",
         "refunded_by",
-        "original_total_amount",
         "refunded_at",
+        "is_accounted",
     )
-    readonly_fields = [f.name for f in SaleRefundAudit._meta.fields]
+    readonly_fields = (
+        "sale",
+        "subtotal_amount",
+        "tax_amount",
+        "discount_amount",
+        "total_amount",
+        "cogs_amount",
+        "gross_profit_amount",
+        "refunded_by",
+        "refunded_at",
+        "is_accounted",
+    )
+    search_fields = ("sale__invoice_no",)
+    list_filter = ("refunded_at", "is_accounted")
