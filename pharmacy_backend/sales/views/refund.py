@@ -1,5 +1,3 @@
-# sales/views/refund.py
-
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -54,16 +52,23 @@ class SaleRefundViewSet(
     - refund: protected capability (admin/manager)
     """
 
-    queryset = Sale.objects.select_related("user").prefetch_related(
-        "items",
-        "items__product",
-        "refund_audits",
-    )
-
     serializer_class = SaleSerializer
     permission_classes = [IsAuthenticated]
 
-    required_capability = None
+    # --------------------------------------------------
+    # QUERYSET
+    # --------------------------------------------------
+
+    def get_queryset(self):
+        return (
+            Sale.objects
+            .select_related("user")
+            .prefetch_related(
+                "items",
+                "items__product",
+                "refund_audits",
+            )
+        )
 
     # --------------------------------------------------
     # PERMISSIONS
@@ -75,7 +80,6 @@ class SaleRefundViewSet(
             self.required_capability = CAP_POS_REFUND
             return [IsAuthenticated(), HasCapability()]
 
-        # Read access requires either sell capability or reports visibility
         self.required_any_capabilities = {
             CAP_POS_SELL,
             CAP_REPORTS_VIEW_POS,
@@ -136,5 +140,9 @@ class SaleRefundViewSet(
                 http_status=status.HTTP_400_BAD_REQUEST,
             )
 
-        serializer = SaleSerializer(refunded_sale)
+        serializer = SaleSerializer(
+            refunded_sale,
+            context={"request": request},
+        )
+
         return Response(serializer.data, status=status.HTTP_200_OK)
