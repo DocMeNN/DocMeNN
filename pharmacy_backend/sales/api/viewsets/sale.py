@@ -1,40 +1,6 @@
-# sales/api/viewsets/sale.py
-
-"""
-======================================================
-PATH: sales/api/viewsets/sale.py
-======================================================
-SALE VIEWSET (STAFF)
-
-Purpose:
-- Provide "Sales History" API for staff UI.
-- List + retrieve sales with basic filters.
-- Provide Receipt endpoint (print-ready payload for staff UI).
-- Provide Refund endpoint (immutable reversal).
-- Provide POS Checkout endpoint (store-scoped cart -> immutable sale).
-
-Security:
-- Requires IsAuthenticated
-- Requires ANY of:
-    reports.view_pos
-    reports.view_accounting
-
-Refund rules:
-- FULL refunds supported (entire sale).
-- PARTIAL refunds supported (by items) with strict quantity ceilings.
-
-Checkout rules:
-- Store-scoped: store_id is mandatory.
-- Backend authoritative for totals & stock.
-- Split payments supported.
-
-Receipt rules:
-- Receipt is read-only and returns a SaleSerializer payload
-  including items + payment_allocations when available.
-- Optional store_id query param is accepted (best-effort guard),
-  but sale_id remains the primary key.
-======================================================
-"""
+# ============================================================
+# PATH: sales/api/viewsets/sale.py
+# ============================================================
 
 from __future__ import annotations
 
@@ -67,6 +33,7 @@ from sales.services.refund_orchestrator import (
     refund_sale_with_stock_restoration,
 )
 from store.models import Store
+
 
 # ==========================================================
 # CHECKOUT INPUT (STAFF)
@@ -136,10 +103,13 @@ class SaleViewSet(viewsets.ReadOnlyModelViewSet):
         qs = (
             Sale.objects.all()
             .select_related("user")
-            .prefetch_related("items", "refund_audit", "payment_allocations")
+            .prefetch_related(
+                "items",
+                "refund_audits",  # ✅ FIXED (plural)
+                "payment_allocations",
+            )
         )
 
-        # Defensive ordering (supports both fields safely)
         if hasattr(Sale, "completed_at"):
             qs = qs.order_by("-completed_at", "-created_at")
         else:
@@ -184,22 +154,17 @@ class SaleViewSet(viewsets.ReadOnlyModelViewSet):
         return qs
 
     # ======================================================
-    # STAFF RECEIPT (CANONICAL)
-    # GET /api/sales/sales/:id/receipt/
+    # STAFF RECEIPT
     # ======================================================
 
     @extend_schema(
         responses={200: SaleSerializer},
-        description=(
-            "Return a print-ready receipt payload for a sale. "
-            "Includes items + split payment allocations when available."
-        ),
+        description="Return a print-ready receipt payload for a sale.",
     )
     @action(detail=True, methods=["get"], url_path="receipt")
     def receipt(self, request, pk=None):
         sale: Sale = self.get_object()
 
-        # Best-effort guard for multi-store: if store_id is provided and Sale has store_id, enforce match.
         store_id = (request.query_params.get("store_id") or "").strip()
         if store_id and hasattr(sale, "store_id"):
             try:
@@ -209,13 +174,12 @@ class SaleViewSet(viewsets.ReadOnlyModelViewSet):
                         status=status.HTTP_404_NOT_FOUND,
                     )
             except Exception:
-                # If anything about comparison is weird, don't crash receipt.
                 pass
 
         return Response(SaleSerializer(sale).data, status=status.HTTP_200_OK)
 
     # ======================================================
-    # STAFF POS CHECKOUT
+    # CHECKOUT
     # ======================================================
 
     @extend_schema(
@@ -276,7 +240,7 @@ class SaleViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     # ======================================================
-    # REFUND (FULL or PARTIAL)
+    # REFUND
     # ======================================================
 
     @extend_schema(
@@ -301,14 +265,13 @@ class SaleViewSet(viewsets.ReadOnlyModelViewSet):
                 items=items or None,
             )
 
-            audit = getattr(refunded_sale, "refund_audit", None)
+            # ✅ FIXED — plural relationship
+            audits = getattr(refunded_sale, "refund_audits", None)
             refund_no = None
-            if audit:
-                refund_no = (
-                    getattr(audit, "refund_no", None)
-                    or str(getattr(audit, "id", ""))
-                    or None
-                )
+            if audits:
+                latest = audits.order_by("-created_at").first()
+                if latest:
+                    refund_no = getattr(latest, "refund_no", None) or str(latest.id)
 
             return Response(
                 {
