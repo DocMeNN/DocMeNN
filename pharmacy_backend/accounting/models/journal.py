@@ -1,19 +1,5 @@
 # accounting/models/journal.py
 
-"""
-======================================================
-PATH: accounting/models/journal.py
-======================================================
-JOURNAL ENTRY MODEL
-
-Represents a single accounting transaction (journal header).
-
-Guarantees:
-- Immutable once created (no updates, no deletes)
-- Idempotency via reference uniqueness (when reference is provided)
-- posted_at is the accounting effective date (used for period locks and reports)
-"""
-
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError
@@ -28,6 +14,11 @@ class JournalEntry(models.Model):
         blank=True,
         null=True,
         help_text="External reference (POS sale ID, refund ID, etc.)",
+    )
+
+    source_module = models.CharField(
+        max_length=50,
+        help_text="Originating module (POS, Refunds, Expenses, Inventory, etc.)",
     )
 
     description = models.TextField(
@@ -78,6 +69,9 @@ class JournalEntry(models.Model):
         self.description = (self.description or "").strip()
         if not self.description:
             raise ValidationError("Journal entry description is required")
+
+        if not self.source_module:
+            raise ValidationError("Journal entry must include source_module")
 
         if self.posted_at and timezone.is_naive(self.posted_at):
             self.posted_at = timezone.make_aware(

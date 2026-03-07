@@ -39,11 +39,6 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Sum
 
-from accounting.services.exceptions import (
-    AccountResolutionError,
-    IdempotencyError,
-    JournalEntryCreationError,
-)
 from permissions.roles import ROLE_ADMIN, ROLE_PHARMACIST
 from products.services.stock_fifo import restore_stock_from_sale
 from sales.models.refund_audit import SaleRefundAudit
@@ -84,6 +79,7 @@ def _normalize_partial_items(*, sale: Sale, items: list[dict]) -> list[dict]:
 
     sale_items = list(sale.items.all())
     sale_item_ids = {str(si.id) for si in sale_items}
+
     if not sale_item_ids:
         raise ValidationError("Sale has no items; cannot refund.")
 
@@ -94,6 +90,7 @@ def _normalize_partial_items(*, sale: Sale, items: list[dict]) -> list[dict]:
             raise ValidationError("Refund items must be objects.")
 
         sid = str(line.get("sale_item_id") or "").strip()
+
         if not sid:
             raise ValidationError("Each refund item must include sale_item_id.")
 
@@ -101,6 +98,7 @@ def _normalize_partial_items(*, sale: Sale, items: list[dict]) -> list[dict]:
             raise ValidationError(f"Invalid sale_item_id: {sid}")
 
         qty = _to_int_qty(line.get("quantity") or 0)
+
         if qty <= 0:
             raise ValidationError("Refund quantity must be an integer >= 1.")
 
@@ -109,6 +107,7 @@ def _normalize_partial_items(*, sale: Sale, items: list[dict]) -> list[dict]:
     normalized = [
         {"sale_item_id": sid, "quantity": qty} for sid, qty in agg.items() if qty > 0
     ]
+
     if not normalized:
         raise ValidationError("No valid refund lines provided.")
 
@@ -132,6 +131,7 @@ def _ensure_partial_ceiling(*, sale: Sale, normalized_items: list[dict]):
         qty = int(line["quantity"])
 
         si = sale_items_by_id.get(sid)
+
         if si is None:
             raise ValidationError(f"Invalid sale_item_id: {sid}")
 
@@ -152,6 +152,7 @@ def _ensure_partial_ceiling(*, sale: Sale, normalized_items: list[dict]):
 def _create_item_refund_rows(
     *, sale: Sale, user, reason: str | None, normalized_items: list[dict]
 ) -> list[SaleItemRefund]:
+
     sale_items_by_id = {str(si.id): si for si in sale.items.all()}
     rows: list[SaleItemRefund] = []
 
@@ -189,6 +190,7 @@ def _post_partial_refund_to_ledger(*, sale: Sale, refund_rows: list[SaleItemRefu
 
 def _maybe_mark_sale_partially_refunded(*, sale: Sale):
     status_partial = getattr(Sale, "STATUS_PARTIALLY_REFUNDED", None)
+
     if status_partial:
         sale.status = status_partial
         sale.save(update_fields=["status"])
@@ -197,7 +199,7 @@ def _maybe_mark_sale_partially_refunded(*, sale: Sale):
 def _maybe_finalize_to_full_refund(*, sale: Sale, user):
     """
     If cumulative partial refunds reach full sold quantities:
-    - Create SaleRefundAudit manually (WITHOUT calling refund_sale)
+    - Create SaleRefundAudit manually
     - Transition sale.status -> REFUNDED
     - DO NOT restore stock
     - DO NOT post ledger
@@ -213,7 +215,7 @@ def _maybe_finalize_to_full_refund(*, sale: Sale, user):
     )
 
     if total_sold > 0 and total_refunded >= total_sold:
-        # Prevent duplicate audit
+
         if not SaleRefundAudit.objects.filter(sale=sale).exists():
             SaleRefundAudit.objects.create(
                 sale=sale,
@@ -225,6 +227,7 @@ def _maybe_finalize_to_full_refund(*, sale: Sale, user):
 
         sale.status = Sale.STATUS_REFUNDED
         sale.save(update_fields=["status"])
+
         return True
 
     return False
@@ -243,10 +246,15 @@ def refund_sale_with_stock_restoration(
 
     # ---------------- FULL REFUND ----------------
     if not items:
+
         refunded_sale = refund_sale(
             sale=sale,
             user=user,
-            refund_reason=refund_reason,
+            subtotal_amount=sale.subtotal_amount,
+            tax_amount=sale.tax_amount,
+            discount_amount=sale.discount_amount,
+            cogs_amount=getattr(sale, "cogs_amount", 0),
+            reason=refund_reason,
         )
 
         refund_audit = SaleRefundAudit.objects.get(sale=refunded_sale)
@@ -259,15 +267,23 @@ def refund_sale_with_stock_restoration(
 
         try:
             from accounting.services.posting import post_refund_to_ledger
-            post_refund_to_ledger(sale=refunded_sale, refund_audit=refund_audit)
+
+            post_refund_to_ledger(
+                sale=refunded_sale,
+                refund_audit=refund_audit,
+            )
+
         except Exception as exc:
             raise RefundOrchestratorError(str(exc)) from exc
 
         return refunded_sale
 
     # ---------------- PARTIAL REFUND ----------------
+
     allowed_statuses = {Sale.STATUS_COMPLETED}
+
     maybe_partial = getattr(Sale, "STATUS_PARTIALLY_REFUNDED", None)
+
     if maybe_partial:
         allowed_statuses.add(maybe_partial)
 
@@ -275,7 +291,11 @@ def refund_sale_with_stock_restoration(
         raise ValidationError("Sale is not refundable in its current state.")
 
     normalized_items = _normalize_partial_items(sale=sale, items=items)
-    _ensure_partial_ceiling(sale=sale, normalized_items=normalized_items)
+
+    _ensure_partial_ceiling(
+        sale=sale,
+        normalized_items=normalized_items,
+    )
 
     refund_rows = _create_item_refund_rows(
         sale=sale,
@@ -291,11 +311,19 @@ def refund_sale_with_stock_restoration(
     )
 
     try:
-        _post_partial_refund_to_ledger(sale=sale, refund_rows=refund_rows)
+        _post_partial_refund_to_ledger(
+            sale=sale,
+            refund_rows=refund_rows,
+        )
+
     except Exception as exc:
         raise RefundOrchestratorError(str(exc)) from exc
 
     _maybe_mark_sale_partially_refunded(sale=sale)
-    _maybe_finalize_to_full_refund(sale=sale, user=user)
+
+    _maybe_finalize_to_full_refund(
+        sale=sale,
+        user=user,
+    )
 
     return sale

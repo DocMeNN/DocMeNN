@@ -13,10 +13,13 @@ class Account(models.Model):
     """
     Represents a single account within a Chart of Accounts.
 
-    Guarantees:
+    Enterprise Guarantees:
     - Account codes are unique per chart
-    - Code + name are normalized (trimmed)
-    - Chart-scoped integrity support for resolvers + reporting
+    - Chart-scoped integrity
+    - Hierarchical accounts supported (parent → children)
+    - Control accounts protected from manual posting
+    - System accounts protected from deletion
+    - Normal balance stored for accounting validation
     """
 
     ASSET = "ASSET"
@@ -24,6 +27,7 @@ class Account(models.Model):
     EQUITY = "EQUITY"
     REVENUE = "REVENUE"
     EXPENSE = "EXPENSE"
+    COGS = "COGS"
 
     ACCOUNT_TYPES = [
         (ASSET, "Asset"),
@@ -31,6 +35,12 @@ class Account(models.Model):
         (EQUITY, "Equity"),
         (REVENUE, "Revenue"),
         (EXPENSE, "Expense"),
+        (COGS, "Cost of Goods Sold"),
+    ]
+
+    NORMAL_BALANCES = [
+        ("DEBIT", "Debit"),
+        ("CREDIT", "Credit"),
     ]
 
     chart = models.ForeignKey(
@@ -40,6 +50,7 @@ class Account(models.Model):
     )
 
     code = models.CharField(max_length=10)
+
     name = models.CharField(max_length=150)
 
     account_type = models.CharField(
@@ -47,7 +58,38 @@ class Account(models.Model):
         choices=ACCOUNT_TYPES,
     )
 
+    normal_balance = models.CharField(
+        max_length=6,
+        choices=NORMAL_BALANCES,
+        help_text="Expected accounting balance direction",
+    )
+
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="children",
+    )
+
+    description = models.TextField(blank=True)
+
     is_active = models.BooleanField(default=True)
+
+    system_account = models.BooleanField(
+        default=False,
+        help_text="System accounts cannot be deleted or modified",
+    )
+
+    is_control_account = models.BooleanField(
+        default=False,
+        help_text="Control accounts cannot receive manual journal postings",
+    )
+
+    allow_manual_posting = models.BooleanField(
+        default=True,
+        help_text="If False, only system modules may post here",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -85,9 +127,21 @@ class Account(models.Model):
 
         if not self.code:
             raise ValidationError("Account code is required")
+
         if not self.name:
             raise ValidationError("Account name is required")
 
+        if self.parent and self.parent.chart_id != self.chart_id:
+            raise ValidationError("Parent account must belong to the same chart")
+
     def save(self, *args, **kwargs):
+        if self.pk and self.system_account:
+            raise ValidationError("System accounts cannot be modified")
+
         self.full_clean()
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.system_account:
+            raise ValidationError("System accounts cannot be deleted")
+        return super().delete(*args, **kwargs)

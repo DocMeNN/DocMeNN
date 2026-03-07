@@ -1,19 +1,5 @@
 # accounting/models/ledger.py
 
-"""
-======================================================
-PATH: accounting/models/ledger.py
-======================================================
-LEDGER ENTRY MODEL
-
-Atomic debit or credit posting to a single account.
-
-Guarantees:
-- Immutable once created (no updates, no deletes)
-- Amount is always positive; direction is via entry_type
-- Reporting uses journal_entry.posted_at as the accounting timeline
-"""
-
 from __future__ import annotations
 
 from decimal import Decimal
@@ -88,6 +74,11 @@ class LedgerEntry(models.Model):
 
         if self.amount is None or self.amount <= 0:
             raise ValidationError("Ledger amount must be > 0")
+
+        if self.account and self.account.is_control_account and self.account.allow_manual_posting:
+            raise ValidationError(
+                "Control accounts cannot receive manual ledger postings"
+            )
 
     def save(self, *args, **kwargs):
         if self.pk:

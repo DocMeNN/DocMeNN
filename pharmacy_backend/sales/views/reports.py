@@ -11,9 +11,8 @@ Fixes included:
   This fixes the bug where refunds done today for a sale completed earlier
   would show as 0 in Daily Sales and Z-Report.
 
-- Refund totals are computed best-effort to support partial refunds:
-  prefer any explicit refunded amount fields if present, otherwise fallback
-  to original_total_amount.
+- Refund totals are computed using the canonical field `total_amount`
+  from SaleRefundAudit, with legacy fallbacks for safety.
 
 Notes:
 - Gross numbers are still based on COMPLETED sales within day bounds.
@@ -91,11 +90,15 @@ def _display_name(
 
 def _refund_amount_from_audit(audit: SaleRefundAudit) -> Decimal:
     """
-    Best-effort refund amount resolver.
+    Resolve refund amount from audit record.
 
-    Prefer partial/refund amount fields if present.
-    Fallback to original_total_amount.
+    Canonical schema uses `total_amount`.
+    Legacy fallback fields remain supported.
     """
+
+    if hasattr(audit, "total_amount") and audit.total_amount is not None:
+        return Decimal(str(audit.total_amount))
+
     candidate_fields = [
         "refund_total_amount",
         "refunded_total_amount",
@@ -103,6 +106,7 @@ def _refund_amount_from_audit(audit: SaleRefundAudit) -> Decimal:
         "refunded_amount",
         "total_refunded_amount",
         "partial_refund_total_amount",
+        "original_total_amount",
     ]
 
     for attr in candidate_fields:
@@ -111,7 +115,7 @@ def _refund_amount_from_audit(audit: SaleRefundAudit) -> Decimal:
             if v is not None:
                 return Decimal(str(v))
 
-    return Decimal(str(getattr(audit, "original_total_amount", 0) or 0))
+    return Decimal("0.00")
 
 
 class DailySalesReportView(APIView):
@@ -156,7 +160,6 @@ class DailySalesReportView(APIView):
             completed_at__lt=end,
         )
 
-        # Gross completed totals
         gross = completed_qs.aggregate(
             sale_count=Count("id"),
             subtotal=Sum("subtotal_amount"),
@@ -167,7 +170,6 @@ class DailySalesReportView(APIView):
 
         gross_total = gross.get("total") or Decimal("0.00")
 
-        # Refund totals MUST be based on refund event time
         refunds_qs = SaleRefundAudit.objects.filter(
             refunded_at__gte=start,
             refunded_at__lt=end,
@@ -185,14 +187,12 @@ class DailySalesReportView(APIView):
 
         net_total = gross_total - refund_total
 
-        # Payment breakdown (completed only)
         payment_breakdown = list(
             completed_qs.values("payment_method")
             .annotate(count=Count("id"), total=Sum("total_amount"))
             .order_by("payment_method")
         )
 
-        # Cashier breakdown (completed only)
         cashier_rows = list(
             completed_qs.values(
                 "user__id",
@@ -215,7 +215,6 @@ class DailySalesReportView(APIView):
                     "total_amount": _money(gross_total),
                 },
                 "refunds": {
-                    # more accurate than relying on Sale.STATUS_REFUNDED
                     "refunded_sales_count": len(refunded_sale_ids),
                     "refund_events_count": refund_events_count,
                     "refund_total_amount": _money(refund_total),
@@ -356,15 +355,16 @@ class ZReportView(APIView):
         gross_total = completed_qs.aggregate(total=Sum("total_amount")).get(
             "total"
         ) or Decimal("0.00")
+
         tx_count = completed_qs.count()
 
-        # Refund totals MUST be based on refund event time
         refunds_qs = SaleRefundAudit.objects.filter(
             refunded_at__gte=start,
             refunded_at__lt=end,
         )
 
         refunds_total = Decimal("0.00")
+
         for a in refunds_qs.iterator():
             refunds_total += _refund_amount_from_audit(a)
 

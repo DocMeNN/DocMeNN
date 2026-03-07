@@ -30,7 +30,6 @@ IMPORTANT BEHAVIOR:
 - We do NOT rely on StockBatch.is_active for availability filtering.
   Availability is determined by:
     quantity_remaining > 0 AND expiry_date >= today
-  because is_active may be derived/denormalized and can lag or differ by defaults.
 """
 
 from __future__ import annotations
@@ -78,15 +77,12 @@ def _resolve_store_id(*, product, store=None):
 
 
 def _get_batches_qs(*, product, store_id, today):
-    # NOTE: Do NOT depend on StockBatch.is_active here.
-    # Correctness is driven by quantity_remaining > 0 and not expired.
     base = StockBatch.objects.filter(
         product=product,
         expiry_date__gte=today,
         quantity_remaining__gt=0,
     )
 
-    # Single-store mode (tests / simple deployments)
     if store_id is None:
         return base.filter(store__isnull=True)
 
@@ -102,14 +98,6 @@ def _get_batches_qs(*, product, store_id, today):
 
 
 def _require_batch_cost(batch: StockBatch) -> Decimal:
-    """
-    Returns a safe Decimal cost.
-
-    Legacy/test behavior:
-    - If unit_cost is NULL -> treat as 0.00 (COGS not enforced here).
-    Strict behavior (optional future):
-    - Enforce non-null/non-zero at accounting posting/report time.
-    """
     raw = getattr(batch, "unit_cost", None)
     if raw is None:
         return Decimal("0.00")
@@ -127,6 +115,17 @@ def _require_batch_cost(batch: StockBatch) -> Decimal:
 
 @transaction.atomic
 def deduct_stock_fifo(*, product, quantity, user=None, sale=None, store=None):
+    """
+    Deduct stock using FIFO and return:
+
+    {
+        "movements": [...],
+        "total_cost": Decimal
+    }
+
+    total_cost = sum(consumed_qty * unit_cost_snapshot)
+    """
+
     if not product:
         raise ValueError("product is required")
 
@@ -137,12 +136,14 @@ def deduct_stock_fifo(*, product, quantity, user=None, sale=None, store=None):
 
     qty = _to_int_qty(quantity)
     if qty <= 0:
-        return []
+        return {"movements": [], "total_cost": Decimal("0.00")}
 
     store_id = _resolve_store_id(product=product, store=store)
     today = timezone.localdate()
     remaining_qty = qty
+
     movements = []
+    total_cost = Decimal("0.00")
 
     batches_qs = (
         _get_batches_qs(product=product, store_id=store_id, today=today)
@@ -175,22 +176,27 @@ def deduct_stock_fifo(*, product, quantity, user=None, sale=None, store=None):
         batch.is_active = batch.quantity_remaining > 0
         batch.save(update_fields=["quantity_remaining", "is_active"])
 
-        movements.append(
-            StockMovement.objects.create(
-                product=product,
-                batch=batch,
-                movement_type=StockMovement.MovementType.OUT,
-                reason=StockMovement.Reason.SALE,
-                quantity=consumed,
-                unit_cost_snapshot=unit_cost,  # may be 0.00 for legacy/test
-                performed_by=user,
-                sale=sale,
-            )
+        movement = StockMovement.objects.create(
+            product=product,
+            batch=batch,
+            movement_type=StockMovement.MovementType.OUT,
+            reason=StockMovement.Reason.SALE,
+            quantity=consumed,
+            unit_cost_snapshot=unit_cost,
+            performed_by=user,
+            sale=sale,
         )
+
+        movements.append(movement)
+
+        total_cost += unit_cost * Decimal(consumed)
 
         remaining_qty -= consumed
 
-    return movements
+    return {
+        "movements": movements,
+        "total_cost": total_cost,
+    }
 
 
 def _normalize_refund_items(*, sale, items):
