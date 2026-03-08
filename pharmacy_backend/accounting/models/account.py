@@ -61,6 +61,7 @@ class Account(models.Model):
     normal_balance = models.CharField(
         max_length=6,
         choices=NORMAL_BALANCES,
+        default="DEBIT",
         help_text="Expected accounting balance direction",
     )
 

@@ -18,6 +18,7 @@ class JournalEntry(models.Model):
 
     source_module = models.CharField(
         max_length=50,
+        default="system",
         help_text="Originating module (POS, Refunds, Expenses, Inventory, etc.)",
     )
 

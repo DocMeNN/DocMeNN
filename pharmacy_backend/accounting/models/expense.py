@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -15,12 +17,6 @@ from accounting.models.journal import JournalEntry
 class Expense(models.Model):
     """
     Expense transaction (business event), posted to the ledger via the engine.
-
-    Rule:
-    - You may create it unposted
-    - You may mark it posted exactly once (set posted_journal_entry + is_posted=True)
-    - After it is posted in the DB, it becomes immutable
-    - Posted expenses cannot be deleted
     """
 
     PAYMENT_CASH = "cash"
@@ -38,7 +34,7 @@ class Expense(models.Model):
     amount = models.DecimalField(
         max_digits=14,
         decimal_places=2,
-        validators=[MinValueValidator(0.01)],
+        validators=[MinValueValidator(Decimal("0.01"))],
     )
 
     expense_account = models.ForeignKey(
@@ -95,7 +91,6 @@ class Expense(models.Model):
         return f"Expense #{self.id} - {self.amount} ({self.expense_date})"
 
     def clean(self):
-        # Same-chart integrity
         if self.expense_account_id and self.payment_account_id:
             if getattr(self.expense_account, "chart_id", None) != getattr(
                 self.payment_account, "chart_id", None
@@ -104,23 +99,24 @@ class Expense(models.Model):
                     "expense_account and payment_account must belong to the same chart."
                 )
 
-        # Posted state consistency
         if self.is_posted and self.posted_journal_entry_id is None:
             raise ValidationError(
                 "posted_journal_entry is required when is_posted=True."
             )
+
         if not self.is_posted and self.posted_journal_entry_id is not None:
             raise ValidationError(
                 "posted_journal_entry must be null when is_posted=False."
             )
 
     def save(self, *args, **kwargs):
-        # Block edits ONLY if already posted in DB (still allows one-time transition)
         if self.pk and type(self).objects.filter(pk=self.pk, is_posted=True).exists():
             raise ValidationError("Expense records are immutable once posted")
+
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
         if self.pk and type(self).objects.filter(pk=self.pk, is_posted=True).exists():
             raise ValidationError("Posted expense records cannot be deleted")
+
         return super().delete(*args, **kwargs)

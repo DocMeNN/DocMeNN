@@ -10,6 +10,8 @@ from django.db import models
 from django.db.models import Sum
 from django.utils import timezone
 
+from store.models import Store
+
 User = settings.AUTH_USER_MODEL
 
 
@@ -26,6 +28,20 @@ class Sale(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
+    # ============================================================
+    # MULTI-RETAIL FOUNDATION
+    # TEMPORARILY NULLABLE FOR MIGRATION SAFETY
+    # ============================================================
+
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.PROTECT,
+        related_name="sales",
+        db_index=True,
+        null=True,
+        blank=True,
+    )
+
     invoice_no = models.CharField(max_length=64, unique=True, blank=True)
 
     user = models.ForeignKey(
@@ -35,26 +51,66 @@ class Sale(models.Model):
         related_name="sales",
     )
 
-    subtotal_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    subtotal_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
 
-    cogs_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    gross_profit_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    tax_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+
+    discount_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+
+    total_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+
+    cogs_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+
+    gross_profit_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
 
     payment_method = models.CharField(max_length=32, default="cash")
 
-    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_COMPLETED)
+    status = models.CharField(
+        max_length=32,
+        choices=STATUS_CHOICES,
+        default=STATUS_COMPLETED,
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
+
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["store", "created_at"]),
+            models.Index(fields=["status"]),
+        ]
 
     # ============================================================
-    # REFUND AGGREGATES (CRITICAL FIX)
+    # REFUND AGGREGATES
     # ============================================================
 
     @property
@@ -86,4 +142,5 @@ class Sale(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.invoice_no} | {self.total_amount}"
+        store_name = getattr(self.store, "name", "Store")
+        return f"{store_name} | {self.invoice_no} | {self.total_amount}"

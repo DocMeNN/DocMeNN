@@ -1,6 +1,6 @@
-"""
-PATH: products/models/stock_batch.py
+# products/models/stock_batch.py
 
+"""
 STOCK BATCH (DELIVERY-BASED INVENTORY)
 
 Compatibility goals (tests + legacy):

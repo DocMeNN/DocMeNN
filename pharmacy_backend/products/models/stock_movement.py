@@ -11,10 +11,13 @@ GUARANTEES:
 - Movement direction validated against reason
 - Sale-linked movements must reference a sale
 
+MULTI-RETAIL GUARANTEE:
+- Every movement belongs to a store.
+- Store is derived from batch or product automatically.
+- Ensures reliable store-level inventory audits.
+
 HOTSPRINT UPGRADE (COST-SNAPSHOT READY):
-- unit_cost_snapshot is stored per movement for audit reconstruction.
-- New writes MUST populate it whenever batch has a unit_cost.
-- Legacy rows may exist with NULL snapshot (handled by backfill command).
+- unit_cost_snapshot stored per movement for audit reconstruction.
 """
 
 import uuid
@@ -24,6 +27,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from store.models import Store
 from .product import Product
 from .stock_batch import StockBatch
 
@@ -50,11 +54,30 @@ class StockMovement(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    product = models.ForeignKey(
-        Product, on_delete=models.CASCADE, related_name="stock_movements"
+    # ============================================================
+    # STORE CONTEXT (MULTI-RETAIL FOUNDATION)
+    # TEMPORARILY NULLABLE FOR SAFE MIGRATION
+    # ============================================================
+
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.PROTECT,
+        related_name="stock_movements",
+        db_index=True,
+        null=True,
+        blank=True,
     )
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="stock_movements",
+    )
+
     batch = models.ForeignKey(
-        StockBatch, on_delete=models.CASCADE, related_name="stock_movements"
+        StockBatch,
+        on_delete=models.CASCADE,
+        related_name="stock_movements",
     )
 
     movement_type = models.CharField(max_length=3, choices=MovementType.choices)
@@ -62,7 +85,6 @@ class StockMovement(models.Model):
 
     quantity = models.PositiveIntegerField()
 
-    # Migration-safe nullable; new flows should populate it.
     unit_cost_snapshot = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -96,24 +118,36 @@ class StockMovement(models.Model):
             models.Index(fields=["created_at"]),
             models.Index(fields=["reason"]),
             models.Index(fields=["movement_type"]),
+            models.Index(fields=["store", "created_at"]),
             models.Index(fields=["product", "created_at"]),
             models.Index(fields=["batch", "created_at"]),
             models.Index(fields=["sale", "created_at"]),
         ]
 
+    # ============================================================
+    # VALIDATION
+    # ============================================================
+
     def clean(self):
         if self.quantity <= 0:
             raise ValidationError("quantity must be greater than zero")
 
-        # Validate batch-product consistency
         if self.batch_id and self.product_id:
             batch_vals = (
                 StockBatch.objects.filter(id=self.batch_id)
-                .values("product_id", "unit_cost")
+                .values("product_id", "store_id", "unit_cost")
                 .first()
             )
-            if batch_vals and batch_vals["product_id"] != self.product_id:
-                raise ValidationError("Batch does not belong to product")
+
+            if batch_vals:
+                if batch_vals["product_id"] != self.product_id:
+                    raise ValidationError("Batch does not belong to product")
+
+                if self.store_id and batch_vals["store_id"]:
+                    if self.store_id != batch_vals["store_id"]:
+                        raise ValidationError(
+                            "StockMovement.store must match StockBatch.store"
+                        )
 
         expected_type = self.REASON_TO_MOVEMENT.get(self.reason)
         if expected_type and self.movement_type != expected_type:
@@ -124,23 +158,45 @@ class StockMovement(models.Model):
         if self.reason in {self.Reason.SALE, self.Reason.REFUND} and not self.sale_id:
             raise ValidationError("SALE / REFUND must reference a sale")
 
-        # If batch has a unit_cost, require snapshot for ALL reasons for new writes.
         if self.batch_id:
             batch_cost = (
                 StockBatch.objects.filter(id=self.batch_id)
                 .values_list("unit_cost", flat=True)
                 .first()
             )
+
             if batch_cost is not None and self.unit_cost_snapshot is None:
                 raise ValidationError(
                     "unit_cost_snapshot is required when batch.unit_cost is set"
                 )
 
+    # ============================================================
+    # IMMUTABLE SAVE
+    # ============================================================
+
     def save(self, *args, **kwargs):
         if not self._state.adding:
             raise ValidationError("StockMovement records are immutable")
 
-        # Derive cost snapshot from batch if not explicitly set
+        if not self.store_id and self.batch_id:
+            self.store_id = (
+                StockBatch.objects.filter(id=self.batch_id)
+                .values_list("store_id", flat=True)
+                .first()
+            )
+
+        if not self.store_id and self.product_id:
+            self.store_id = (
+                Product.objects.filter(id=self.product_id)
+                .values_list("store_id", flat=True)
+                .first()
+            )
+
+        if not self.store_id:
+            raise ValidationError(
+                "StockMovement.store could not be determined. Provide store or ensure batch/product has store."
+            )
+
         if self.unit_cost_snapshot is None and self.batch_id:
             self.unit_cost_snapshot = (
                 StockBatch.objects.filter(id=self.batch_id)
@@ -151,10 +207,18 @@ class StockMovement(models.Model):
         self.full_clean()
         return super().save(*args, **kwargs)
 
+    # ============================================================
+    # IMMUTABLE DELETE
+    # ============================================================
+
     def delete(self, *args, **kwargs):
         raise ValidationError(
             "StockMovement records are immutable and cannot be deleted"
         )
+
+    # ============================================================
+    # COST PROPERTY
+    # ============================================================
 
     @property
     def total_cost(self) -> Decimal:
@@ -167,4 +231,5 @@ class StockMovement(models.Model):
 
     def __str__(self):
         product_name = getattr(self.product, "name", "Product")
-        return f"{product_name} | {self.reason} | {self.quantity}"
+        store_name = getattr(self.store, "name", "Store")
+        return f"{store_name} | {product_name} | {self.reason} | {self.quantity}"
