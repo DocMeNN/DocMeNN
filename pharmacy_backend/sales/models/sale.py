@@ -11,6 +11,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from store.models import Store
+from accounting.models.event import AccountingEvent
 
 User = settings.AUTH_USER_MODEL
 
@@ -30,7 +31,6 @@ class Sale(models.Model):
 
     # ============================================================
     # MULTI-RETAIL FOUNDATION
-    # TEMPORARILY NULLABLE FOR MIGRATION SAFETY
     # ============================================================
 
     store = models.ForeignKey(
@@ -87,7 +87,10 @@ class Sale(models.Model):
         default=Decimal("0.00"),
     )
 
-    payment_method = models.CharField(max_length=32, default="cash")
+    payment_method = models.CharField(
+        max_length=32,
+        default="cash",
+    )
 
     status = models.CharField(
         max_length=32,
@@ -125,8 +128,36 @@ class Sale(models.Model):
         return Decimal(self.total_amount) - Decimal(self.total_refunded_amount)
 
     # ============================================================
+    # ACCOUNTING EVENT CREATION
+    # ============================================================
+
+    def create_accounting_event(self):
+        """
+        Creates accounting event for completed sale if not already created.
+        """
+
+        existing_event = AccountingEvent.objects.filter(
+            event_type=AccountingEvent.EVENT_SALE_COMPLETED,
+            source_model="Sale",
+            source_id=self.id,
+        ).exists()
+
+        if existing_event:
+            return
+
+        AccountingEvent.objects.create(
+            event_type=AccountingEvent.EVENT_SALE_COMPLETED,
+            source_model="Sale",
+            source_id=self.id,
+            store=self.store,
+            created_by=self.user,
+        )
+
+    # ============================================================
 
     def save(self, *args, **kwargs):
+        is_new = self._state.adding
+
         if not self.invoice_no:
             prefix = timezone.now().strftime("INV%Y%m%d")
             self.invoice_no = f"{prefix}-{uuid.uuid4().hex[:8].upper()}"
@@ -135,11 +166,20 @@ class Sale(models.Model):
             self.completed_at = timezone.now()
 
         try:
-            self.gross_profit_amount = Decimal(self.subtotal_amount) - Decimal(self.cogs_amount)
+            self.gross_profit_amount = Decimal(self.subtotal_amount) - Decimal(
+                self.cogs_amount
+            )
         except Exception:
             pass
 
         super().save(*args, **kwargs)
+
+        # ========================================================
+        # EVENT GENERATION
+        # ========================================================
+
+        if self.status == self.STATUS_COMPLETED:
+            self.create_accounting_event()
 
     def __str__(self):
         store_name = getattr(self.store, "name", "Store")

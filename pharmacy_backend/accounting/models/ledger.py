@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -13,6 +14,12 @@ from accounting.models.journal import JournalEntry
 
 
 class LedgerEntry(models.Model):
+    """
+    Immutable debit/credit line belonging to a JournalEntry.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     DEBIT = "DEBIT"
     CREDIT = "CREDIT"
 
@@ -75,7 +82,11 @@ class LedgerEntry(models.Model):
         if self.amount is None or self.amount <= 0:
             raise ValidationError("Ledger amount must be > 0")
 
-        if self.account and self.account.is_control_account and self.account.allow_manual_posting:
+        if (
+            self.account
+            and self.account.is_control_account
+            and self.account.allow_manual_posting
+        ):
             raise ValidationError(
                 "Control accounts cannot receive manual ledger postings"
             )

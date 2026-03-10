@@ -1,6 +1,4 @@
 """
-PATH: backend/settings/base.py
-
 BASE SETTINGS (shared by dev + prod)
 
 Operational maturity:
@@ -60,7 +58,6 @@ env = environ.Env(
     SENTRY_TRACES_SAMPLE_RATE=(float, 0.0),
     SENTRY_SEND_PII=(bool, False),
     # Accounting posting toggle (NEW)
-    # Default: disabled in tests to avoid failing POS flow due to missing chart setup.
     ACCOUNTING_POSTING_ENABLED=(bool, not TESTING),
 )
 
@@ -120,6 +117,7 @@ INSTALLED_APPS = [
     "purchases",
     "public.apps.PublicConfig",
     "batches",
+    "backend.events.apps.EventsConfig",
 ]
 
 # -----------------------------------------

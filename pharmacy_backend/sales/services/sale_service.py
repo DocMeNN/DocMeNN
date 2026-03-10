@@ -14,6 +14,10 @@ from sales.models import Sale, SaleItem
 
 from accounting.services.posting import post_sale_to_ledger
 
+from backend.events.event_bus import publish
+from backend.events.domain.order_events import OrderCompleted
+from backend.events.domain.inventory_events import StockDeducted
+
 
 class EmptyCartError(Exception):
     pass
@@ -32,29 +36,12 @@ def create_sale_from_cart(
 ):
     """
     CORE SALES DOMAIN SERVICE
-
-    SINGLE SOURCE OF TRUTH for:
-    - Sale creation
-    - SaleItem creation
-    - FIFO stock deduction
-    - Totals calculation
-    - Ledger posting
-
-    GUARANTEES:
-    - FIFO is the ONLY stock authority
-    - No pre-validation outside FIFO
-    - Fully atomic checkout
     """
 
     if not cart or not cart.items.exists():
         raise EmptyCartError("Cart is empty")
 
-    # Lock cart items for safe checkout
     cart_items = cart.items.select_related("product").select_for_update()
-
-    # --------------------------------------------------
-    # CREATE SALE
-    # --------------------------------------------------
 
     sale = Sale.objects.create(
         user=user,
@@ -74,29 +61,30 @@ def create_sale_from_cart(
                 sale=sale,
                 product=item.product,
                 quantity=int(item.quantity),
-                unit_price=item.unit_price,  # price snapshot
+                unit_price=item.unit_price,
             )
 
             subtotal += sale_item.total_price
 
-            # --------------------------------------------------
-            # SINGLE STOCK EXIT POINT (FIFO ENGINE)
-            # --------------------------------------------------
-
-            deduct_stock_fifo(
+            result = deduct_stock_fifo(
                 product=item.product,
                 quantity=item.quantity,
                 user=user,
                 sale=sale,
             )
 
+            publish(
+                StockDeducted(
+                    sale_id=sale.id,
+                    product_id=item.product.id,
+                    quantity=item.quantity,
+                    total_cost=result["total_cost"],
+                )
+            )
+
     except InsufficientStockError as exc:
         transaction.set_rollback(True)
         raise StockValidationError(str(exc))
-
-    # --------------------------------------------------
-    # FINALIZE TOTALS
-    # --------------------------------------------------
 
     tax = getattr(sale, "tax_amount", Decimal("0.00")) or Decimal("0.00")
     discount = getattr(sale, "discount_amount", Decimal("0.00")) or Decimal("0.00")
@@ -113,19 +101,19 @@ def create_sale_from_cart(
         ]
     )
 
-    # --------------------------------------------------
-    # LEDGER POSTING (ACCOUNTING)
-    # --------------------------------------------------
-
     try:
         post_sale_to_ledger(sale=sale)
     except Exception as exc:
         transaction.set_rollback(True)
         raise RuntimeError(f"Ledger posting failed: {exc}") from exc
 
-    # --------------------------------------------------
-    # FINALIZE CART
-    # --------------------------------------------------
+    publish(
+        OrderCompleted(
+            sale_id=sale.id,
+            user_id=user.id,
+            total_amount=sale.total_amount,
+        )
+    )
 
     cart.items.all().delete()
     cart.is_active = False

@@ -14,6 +14,7 @@ from accounting.models.expense import Expense
 from accounting.models.journal import JournalEntry
 from accounting.models.ledger import LedgerEntry
 from accounting.models.period_close import PeriodClose
+from .event import AccountingEvent
 
 __all__ = [
     "ChartOfAccounts",
@@ -22,4 +23,5 @@ __all__ = [
     "LedgerEntry",
     "Expense",
     "PeriodClose",
+    "AccountingEvent",
 ]

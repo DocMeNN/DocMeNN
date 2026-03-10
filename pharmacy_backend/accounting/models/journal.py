@@ -2,13 +2,36 @@
 
 from __future__ import annotations
 
+import uuid
+
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from store.models import Store
+
+User = settings.AUTH_USER_MODEL
+
 
 class JournalEntry(models.Model):
+    """
+    Immutable accounting event representing a balanced journal entry.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.PROTECT,
+        related_name="journal_entries",
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Store associated with the transaction (for multi-branch reporting).",
+    )
+
     reference = models.CharField(
         max_length=100,
         blank=True,
@@ -31,6 +54,14 @@ class JournalEntry(models.Model):
         help_text="Accounting effective date",
     )
 
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_journal_entries",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         help_text="Timestamp when the journal entry was created",
@@ -48,6 +79,7 @@ class JournalEntry(models.Model):
             models.Index(fields=["created_at"]),
             models.Index(fields=["reference"]),
             models.Index(fields=["is_posted"]),
+            models.Index(fields=["store"]),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -60,7 +92,7 @@ class JournalEntry(models.Model):
         verbose_name_plural = "Journal Entries"
 
     def __str__(self):
-        return f"JournalEntry #{self.id} – {self.posted_at.date()}"
+        return f"JournalEntry {self.id} – {self.posted_at.date()}"
 
     def clean(self):
         if self.reference is not None:

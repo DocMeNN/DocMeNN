@@ -10,6 +10,10 @@ from products.services.stock_fifo import restore_stock_from_sale
 from sales.models.refund_audit import SaleRefundAudit
 from sales.models.sale import Sale
 
+from backend.events.event_bus import publish
+from backend.events.domain.refund_events import RefundCompleted
+from backend.events.domain.inventory_events import StockRestored
+
 
 class RefundError(Exception):
     pass
@@ -31,16 +35,6 @@ def refund_sale(
     reason: str | None = None,
     items: list | None = None,
 ):
-    """
-    CENTRAL REFUND DOMAIN SERVICE
-
-    Responsibilities
-    ----------------
-    1. Restore inventory via FIFO engine
-    2. Record financial refund audit
-    3. Prevent over-refund
-    4. Maintain accounting correctness
-    """
 
     if sale.status not in (Sale.STATUS_COMPLETED, Sale.STATUS_REFUNDED):
         raise RefundError("Sale is not refundable")
@@ -53,14 +47,8 @@ def refund_sale(
     total_amount = subtotal_amount + tax_amount - discount_amount
     gross_profit_amount = subtotal_amount - cogs_amount
 
-    # --------------------------------------------------
-    # LOCK SALE FOR CONCURRENCY SAFETY
-    # --------------------------------------------------
     sale = Sale.objects.select_for_update().get(pk=sale.pk)
 
-    # --------------------------------------------------
-    # CALCULATE ALREADY REFUNDED
-    # --------------------------------------------------
     already_refunded = (
         sale.refund_audits.aggregate(total=Sum("total_amount"))["total"]
         or Decimal("0.00")
@@ -73,18 +61,21 @@ def refund_sale(
             f"Refund exceeds remaining balance. Remaining={remaining}"
         )
 
-    # --------------------------------------------------
-    # 🔑 INVENTORY RESTORATION (CRITICAL FIX)
-    # --------------------------------------------------
-    restore_stock_from_sale(
+    movements = restore_stock_from_sale(
         sale=sale,
         user=user,
         items=items,
     )
 
-    # --------------------------------------------------
-    # FINANCIAL AUDIT RECORD
-    # --------------------------------------------------
+    for mv in movements:
+        publish(
+            StockRestored(
+                sale_id=sale.id,
+                product_id=mv.product_id,
+                quantity=mv.quantity,
+            )
+        )
+
     refund = SaleRefundAudit.objects.create(
         sale=sale,
         refunded_by=user,
@@ -98,9 +89,14 @@ def refund_sale(
         gross_profit_amount=gross_profit_amount,
     )
 
-    # --------------------------------------------------
-    # UPDATE SALE STATUS
-    # --------------------------------------------------
+    publish(
+        RefundCompleted(
+            sale_id=sale.id,
+            refund_id=refund.id,
+            total_amount=total_amount,
+        )
+    )
+
     if (already_refunded + total_amount) >= sale.total_amount:
         sale.status = Sale.STATUS_REFUNDED
         sale.save(update_fields=["status"])

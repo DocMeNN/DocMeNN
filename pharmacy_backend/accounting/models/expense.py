@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -12,12 +14,17 @@ from django.utils import timezone
 
 from accounting.models.account import Account
 from accounting.models.journal import JournalEntry
+from store.models import Store
+
+User = settings.AUTH_USER_MODEL
 
 
 class Expense(models.Model):
     """
     Expense transaction (business event), posted to the ledger via the engine.
     """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     PAYMENT_CASH = "cash"
     PAYMENT_BANK = "bank"
@@ -28,6 +35,15 @@ class Expense(models.Model):
         (PAYMENT_BANK, "Bank"),
         (PAYMENT_CREDIT, "Credit (Payables)"),
     ]
+
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.PROTECT,
+        related_name="expenses",
+        null=True,
+        blank=True,
+        db_index=True,
+    )
 
     expense_date = models.DateField(default=timezone.localdate)
 
@@ -68,6 +84,14 @@ class Expense(models.Model):
         related_name="posted_expenses",
     )
 
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_expenses",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -78,6 +102,7 @@ class Expense(models.Model):
             models.Index(fields=["expense_date"]),
             models.Index(fields=["is_posted"]),
             models.Index(fields=["created_at"]),
+            models.Index(fields=["store"]),
         ]
         constraints = [
             models.CheckConstraint(
@@ -88,7 +113,7 @@ class Expense(models.Model):
         ]
 
     def __str__(self):
-        return f"Expense #{self.id} - {self.amount} ({self.expense_date})"
+        return f"Expense {self.id} - {self.amount} ({self.expense_date})"
 
     def clean(self):
         if self.expense_account_id and self.payment_account_id:
