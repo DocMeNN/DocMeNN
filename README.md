@@ -136,8 +136,8 @@ I am currently open to:
 
 ## 📫 Connect With Me
 
-- LinkedIn: www.linkedin.com/in/YOUR-LINK
-- Email: your-email@example.com
+- LinkedIn: www.linkedin.com/in/osamuede-me-3799b341
+- Email: meosamuede@gmail.com
 
 ---
 
