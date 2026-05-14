@@ -290,7 +290,7 @@ www.linkedin.com/in/osamuede-me-3799b341
 
 ### GitHub
 
-github.com/DocMeNN
+https://github.com/DocMeNN
 
 ### Email
 
